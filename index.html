@@ -5,7 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Claw Machine Game</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
     body {
       background: #1a0a2e;
       display: flex;
@@ -15,6 +20,9 @@
       min-height: 100vh;
       font-family: 'Segoe UI', Arial, sans-serif;
       overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
     h1 {
       color: #ffe066;
