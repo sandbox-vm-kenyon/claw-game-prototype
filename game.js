@@ -126,6 +126,7 @@ function secondsElapsed() {
 }
 
 function spawnClaw() {
+  if (claws.length > 0) return; // enforce a single claw instance at a time
   const lane = 48 + Math.floor(Math.random() * 8) * 48;
   claws.push({
     x: lane,
@@ -449,12 +450,17 @@ function loop(ts) {
     resolveObstacles();
     updateClaws(dt);
 
-    // Spawn new claw periodically
-    spawnTimer++;
-    if (spawnTimer >= SPAWN_INTERVAL) {
+    // Spawn a new claw only once the current one is gone, so only one
+    // claw is ever active in the game at a time.
+    if (claws.length === 0) {
+      spawnTimer++;
+      if (spawnTimer >= SPAWN_INTERVAL) {
+        spawnTimer = 0;
+        spawnClaw();
+        score++;
+      }
+    } else {
       spawnTimer = 0;
-      spawnClaw();
-      score++;
     }
 
     // Draw scene
