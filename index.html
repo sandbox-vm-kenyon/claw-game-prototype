@@ -29,26 +29,6 @@
       box-shadow: 0 0 40px #a259ff88, 0 0 80px #ff6ec744;
       background: #0d0820;
     }
-    #controls {
-      margin-top: 14px;
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-    .btn {
-      background: linear-gradient(135deg, #a259ff, #ff6ec7);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 12px 22px;
-      font-size: 1.2rem;
-      cursor: pointer;
-      box-shadow: 0 4px 15px #a259ff66;
-      transition: transform 0.1s, box-shadow 0.1s;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    .btn:active { transform: scale(0.94); box-shadow: 0 2px 8px #a259ff44; }
     #instructions {
       color: #b0a0d0;
       font-size: 0.82rem;
@@ -56,25 +36,72 @@
       text-align: center;
       letter-spacing: 0.5px;
     }
-    #wrapper { position: relative; }
+    #wrapper { position: relative; touch-action: none; }
+
+    /* One-handed controls: joystick on the left, single action button on
+       the right, both overlaid on the canvas corners so a thumb never has
+       to leave its side of the screen. */
+    #joystick {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(162,89,255,0.55);
+      touch-action: none;
+    }
+    #joystickKnob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 44px;
+      height: 44px;
+      margin-left: -22px;
+      margin-top: -22px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #a259ff, #ff6ec7);
+      box-shadow: 0 4px 15px #a259ff66;
+      pointer-events: none;
+    }
+    #btnJump {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      width: 76px;
+      height: 76px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #a259ff, #ff6ec7);
+      color: #fff;
+      border: none;
+      font: bold 0.95rem 'Segoe UI', Arial, sans-serif;
+      cursor: pointer;
+      box-shadow: 0 4px 15px #a259ff66;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    #btnJump:active { transform: scale(0.94); box-shadow: 0 2px 8px #a259ff44; }
   </style>
 </head>
 <body>
   <h1>&#127381; CLAW MACHINE &#127381;</h1>
   <div id="wrapper">
     <canvas id="canvas" width="480" height="520"></canvas>
+    <div id="joystick"><div id="joystickKnob"></div></div>
+    <button id="btnJump">JUMP</button>
   </div>
-  <div id="controls">
-    <button class="btn" id="btnLeft">&#8592; Left</button>
-    <button class="btn" id="btnJump">&#8593; Jump</button>
-    <button class="btn" id="btnRight">Right &#8594;</button>
-  </div>
-  <div id="instructions">Arrow keys / A D = Move &nbsp;|&nbsp; Up / W / Space = Jump &nbsp;|&nbsp; Dodge the claw!</div>
+  <div id="instructions">Left joystick = Move &nbsp;|&nbsp; Right button = Jump &nbsp;|&nbsp; Arrow keys / A D / W / Space also work &nbsp;|&nbsp; Dodge the claw!</div>
 
 <script src="game.js"></script>
 <script>
-// Touch/click controls for mobile, wired into game.js's shared top-level
-// `keys` state (classic <script> tags share the same global lexical scope).
+// One-handed controls: a left-side virtual joystick drives movement and a
+// right-side button triggers the jump (the game's only other action — the
+// claw itself is fully AI-controlled, so there's no separate "drop" input
+// to bind). Both are wired into game.js's shared top-level `keys` state
+// (classic <script> tags share the same global lexical scope), the same
+// way the previous touch buttons were.
 function holdKey(key, el) {
   const start = () => { keys[key] = true; };
   const stop  = () => { keys[key] = false; };
@@ -83,9 +110,49 @@ function holdKey(key, el) {
   el.addEventListener('pointerleave', stop);
   el.addEventListener('pointercancel', stop);
 }
-holdKey('ArrowLeft',  document.getElementById('btnLeft'));
-holdKey('ArrowRight', document.getElementById('btnRight'));
-holdKey('ArrowUp',    document.getElementById('btnJump'));
+holdKey('ArrowUp', document.getElementById('btnJump'));
+
+// Draggable joystick: only horizontal deflection affects movement, since
+// this is a side-scrolling platformer with no vertical steering.
+const joystick = document.getElementById('joystick');
+const joystickKnob = document.getElementById('joystickKnob');
+const JOYSTICK_RADIUS = 26; // max knob travel from center, in px
+const JOYSTICK_DEADZONE = 10;
+let joystickPointerId = null;
+
+function updateJoystick(clientX, clientY) {
+  const rect = joystick.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = clientX - cx;
+  const dy = clientY - cy;
+  const dist = Math.min(Math.hypot(dx, dy), JOYSTICK_RADIUS);
+  const angle = Math.atan2(dy, dx);
+  joystickKnob.style.transform = `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px)`;
+
+  keys['ArrowRight'] = dx > JOYSTICK_DEADZONE;
+  keys['ArrowLeft']  = dx < -JOYSTICK_DEADZONE;
+}
+
+function resetJoystick() {
+  joystickKnob.style.transform = 'translate(0, 0)';
+  keys['ArrowLeft'] = false;
+  keys['ArrowRight'] = false;
+  joystickPointerId = null;
+}
+
+joystick.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  joystickPointerId = e.pointerId;
+  joystick.setPointerCapture(e.pointerId);
+  updateJoystick(e.clientX, e.clientY);
+});
+joystick.addEventListener('pointermove', e => {
+  if (e.pointerId !== joystickPointerId) return;
+  updateJoystick(e.clientX, e.clientY);
+});
+joystick.addEventListener('pointerup',     e => { if (e.pointerId === joystickPointerId) resetJoystick(); });
+joystick.addEventListener('pointercancel', e => { if (e.pointerId === joystickPointerId) resetJoystick(); });
 </script>
 </body>
 </html>
