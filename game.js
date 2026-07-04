@@ -35,7 +35,6 @@ function init() {
     vx: 0,
     vy: 0,
     grounded: false,
-    color: '#4af',
   };
 
   claws = [];
@@ -339,23 +338,69 @@ function drawObstacles() {
 }
 
 function drawPlayer(p) {
-  // Glow
-  const grd = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, p.r * 2.5);
-  grd.addColorStop(0, 'rgba(68,170,255,0.35)');
-  grd.addColorStop(1, 'rgba(68,170,255,0)');
+  const r = p.r;
+
+  // Soft glow
+  const grd = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, r * 2.2);
+  grd.addColorStop(0, 'rgba(255,255,255,0.22)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.beginPath();
-  ctx.arc(p.x, p.y, p.r * 2.5, 0, Math.PI * 2);
+  ctx.arc(p.x, p.y, r * 2.2, 0, Math.PI * 2);
   ctx.fillStyle = grd;
   ctx.fill();
 
-  // Body
+  const furColor = '#f7f0e6';
+  const furShadow = '#d8c9b0';
+  const innerEar = '#f3b6c2';
+
+  // Ears (drawn behind the head, tipped slightly outward)
+  const earW = r * 0.6;
+  const earH = r * 1.9;
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(p.x + side * r * 0.45, p.y - r * 0.6);
+    ctx.rotate(side * 0.15);
+    ctx.beginPath();
+    ctx.ellipse(0, -earH / 2, earW / 2, earH / 2, 0, 0, Math.PI * 2);
+    ctx.fillStyle = furColor;
+    ctx.fill();
+    ctx.strokeStyle = furShadow;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, -earH / 2 + 2, earW / 2 - 4, earH / 2 - 6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = innerEar;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Head/body
   ctx.beginPath();
-  ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-  ctx.fillStyle = p.color;
+  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = furColor;
   ctx.fill();
-  ctx.strokeStyle = '#8cf';
+  ctx.strokeStyle = furShadow;
   ctx.lineWidth = 2;
   ctx.stroke();
+
+  // Cheeks
+  ctx.fillStyle = 'rgba(243,182,194,0.5)';
+  ctx.beginPath(); ctx.arc(p.x - r * 0.5, p.y + r * 0.2, r * 0.22, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(p.x + r * 0.5, p.y + r * 0.2, r * 0.22, 0, Math.PI * 2); ctx.fill();
+
+  // Eyes
+  ctx.fillStyle = '#2b2b2b';
+  ctx.beginPath(); ctx.arc(p.x - r * 0.32, p.y - r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(p.x + r * 0.32, p.y - r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
+
+  // Nose
+  ctx.fillStyle = '#e07a92';
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y + r * 0.18);
+  ctx.lineTo(p.x - r * 0.12, p.y + r * 0.32);
+  ctx.lineTo(p.x + r * 0.12, p.y + r * 0.32);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawClaw(c) {
