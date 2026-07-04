@@ -2,6 +2,7 @@
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const btnPlayAgain = document.getElementById('btnPlayAgain');
 
 const W = canvas.width;
 const H = canvas.height;
@@ -26,6 +27,8 @@ function init() {
   fadeSpeed = 0.018;
   score = 0;
   runStartTime = performance.now();
+
+  if (btnPlayAgain) btnPlayAgain.classList.remove('visible');
 
   player = {
     x: W / 2,
@@ -199,6 +202,14 @@ window.addEventListener('keydown', e => {
   if ((e.key === 'r' || e.key === 'R') && state === STATE.GAME_OVER) init();
 });
 window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// "Play Again" button on the game-over screen — restarts the run the same
+// way pressing R does.
+if (btnPlayAgain) {
+  btnPlayAgain.addEventListener('click', () => {
+    if (state === STATE.GAME_OVER) init();
+  });
+}
 
 function handleInput() {
   // Platformer-style horizontal movement
@@ -509,6 +520,9 @@ function loop(ts) {
     // Fade in the game over text
     gameOverAlpha = Math.min(1, gameOverAlpha + 0.025);
     drawGameOver();
+
+    // Reveal the Play Again button once the game-over text has fully faded in
+    if (gameOverAlpha >= 1 && btnPlayAgain) btnPlayAgain.classList.add('visible');
   }
 
   requestAnimationFrame(loop);

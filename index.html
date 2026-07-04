@@ -91,6 +91,34 @@
       touch-action: none;
     }
     #btnJump:active { transform: scale(0.94); box-shadow: 0 2px 8px #a259ff44; }
+
+    /* Play Again button: overlaid on the canvas, hidden until the game-over
+       screen has faded fully in, then faded in itself and made clickable. */
+    #btnPlayAgain {
+      position: absolute;
+      left: 50%;
+      top: 360px;
+      transform: translateX(-50%) scale(0.9);
+      padding: 12px 30px;
+      border-radius: 30px;
+      background: linear-gradient(135deg, #a259ff, #ff6ec7);
+      color: #fff;
+      border: none;
+      font: bold 1rem 'Segoe UI', Arial, sans-serif;
+      letter-spacing: 1px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px #a259ff66;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      z-index: 5;
+    }
+    #btnPlayAgain.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) scale(1);
+    }
+    #btnPlayAgain:active { transform: translateX(-50%) scale(0.94); }
   </style>
 </head>
 <body>
@@ -99,8 +127,9 @@
     <canvas id="canvas" width="480" height="520"></canvas>
     <div id="joystick"><div id="joystickKnob"></div></div>
     <button id="btnJump">JUMP</button>
+    <button id="btnPlayAgain">PLAY AGAIN</button>
   </div>
-  <div id="instructions">Left joystick = Move &nbsp;|&nbsp; Right button = Jump &nbsp;|&nbsp; Arrow keys / A D / W / Space also work &nbsp;|&nbsp; Dodge the claw!</div>
+  <div id="instructions">Left joystick = Move &nbsp;|&nbsp; Right button = Jump &nbsp;|&nbsp; Arrow keys / A D / W / Space also work &nbsp;|&nbsp; Dodge the claw! &nbsp;|&nbsp; Game over? Press R or tap Play Again</div>
 
 <script src="game.js"></script>
 <script>
