@@ -12,6 +12,12 @@ const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2 };
 
 let state, player, claws, score, fadeAlpha, fadeSpeed, gameOverAlpha;
 
+// ─── Platformer physics tuning ─────────────────────────────────────────────
+const MOVE_SPEED = 3.2;
+const GRAVITY = 0.6;
+const JUMP_VELOCITY = -11;
+const MAX_FALL_SPEED = 14;
+
 function init() {
   state = STATE.PLAYING;
   fadeAlpha = 0;
@@ -21,9 +27,12 @@ function init() {
 
   player = {
     x: W / 2,
-    y: H - 60,
+    y: H - 14,   // start standing on the ground
     r: 14,
-    speed: 3,
+    speed: MOVE_SPEED,
+    vx: 0,
+    vy: 0,
+    grounded: true,
     color: '#4af',
   };
 
@@ -85,13 +94,39 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { keys[e.key] = false; });
 
 function handleInput() {
-  if (keys['ArrowLeft']  || keys['a'] || keys['A']) player.x -= player.speed;
-  if (keys['ArrowRight'] || keys['d'] || keys['D']) player.x += player.speed;
-  if (keys['ArrowUp']    || keys['w'] || keys['W']) player.y -= player.speed;
-  if (keys['ArrowDown']  || keys['s'] || keys['S']) player.y += player.speed;
+  // Platformer-style horizontal movement
+  if (keys['ArrowLeft']  || keys['a'] || keys['A']) player.vx = -player.speed;
+  else if (keys['ArrowRight'] || keys['d'] || keys['D']) player.vx = player.speed;
+  else player.vx = 0;
 
+  // Jump — only while grounded, so holding the key won't re-trigger mid-air
+  const jumpPressed = keys['ArrowUp'] || keys['w'] || keys['W'] || keys[' '];
+  if (jumpPressed && player.grounded) {
+    player.vy = JUMP_VELOCITY;
+    player.grounded = false;
+  }
+}
+
+function updatePlayerPhysics() {
+  // Gravity
+  player.vy = Math.min(player.vy + GRAVITY, MAX_FALL_SPEED);
+
+  // Apply velocity
+  player.x += player.vx;
+  player.y += player.vy;
+
+  // Ground collision (floor of the box)
+  const groundY = H - player.r;
+  if (player.y >= groundY) {
+    player.y = groundY;
+    player.vy = 0;
+    player.grounded = true;
+  } else {
+    player.grounded = false;
+  }
+
+  // Keep player within the box horizontally
   player.x = Math.max(player.r, Math.min(W - player.r, player.x));
-  player.y = Math.max(player.r, Math.min(H - player.r, player.y));
 }
 
 // ─── Score ────────────────────────────────────────────────────────────────────
@@ -234,6 +269,7 @@ function loop(ts) {
 
   if (state === STATE.PLAYING) {
     handleInput();
+    updatePlayerPhysics();
     updateClaws(dt);
 
     // Spawn new claw periodically
