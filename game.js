@@ -11,6 +11,7 @@ const H = canvas.height;
 const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2 };
 
 let state, player, claws, score, fadeAlpha, fadeSpeed, gameOverAlpha;
+let runStartTime;
 
 function init() {
   state = STATE.PLAYING;
@@ -18,6 +19,7 @@ function init() {
   gameOverAlpha = 0;
   fadeSpeed = 0.018;
   score = 0;
+  runStartTime = performance.now();
 
   player = {
     x: W / 2,
@@ -31,14 +33,30 @@ function init() {
   spawnClaw();
 }
 
-// ─── Claw ─────────────────────────────────────────────────────────────────────
+// ─── Claw AI ──────────────────────────────────────────────────────────────────
+// The claw actively hunts the bunny: every frame it steers itself toward the
+// bunny's current x position while it descends. Both the homing (horizontal
+// chase) speed and the descent speed ramp up the longer the run lasts, so the
+// hook gets more relentless over time regardless of score.
+
+const HOMING_BASE = 0.9;     // starting horizontal pursuit speed (px/frame)
+const HOMING_GROWTH = 0.06;  // added per second survived
+const HOMING_MAX = 6.5;      // cap so it stays beatable
+
+const FALL_BASE = 1.2;       // starting descent speed (px/frame)
+const FALL_GROWTH = 0.035;   // added per second survived
+const FALL_MAX = 7;          // cap on descent speed
+
+function secondsElapsed() {
+  return (performance.now() - runStartTime) / 1000;
+}
 
 function spawnClaw() {
   const lane = 48 + Math.floor(Math.random() * 8) * 48;
   claws.push({
     x: lane,
     y: -40,
-    vy: 1.2 + score * 0.04,   // gets faster as score rises
+    vy: FALL_BASE,
     armLen: 30,
     jawOpen: 18,
     grabbing: false,
@@ -47,8 +65,21 @@ function spawnClaw() {
 }
 
 function updateClaws(dt) {
+  const t = secondsElapsed();
+  const homingSpeed = Math.min(HOMING_BASE + t * HOMING_GROWTH, HOMING_MAX);
+  const fallSpeed = Math.min(FALL_BASE + t * FALL_GROWTH, FALL_MAX);
+
   for (let c of claws) {
-    c.y += c.vy;
+    // AI pursuit: steer horizontally toward the bunny's current position.
+    const dx = player.x - c.x;
+    const step = Math.min(Math.abs(dx), homingSpeed * dt);
+    c.x += Math.sign(dx) * step;
+    c.x = Math.max(24, Math.min(W - 24, c.x));
+
+    // Descend — speed increases the longer the bunny survives.
+    c.vy = fallSpeed;
+    c.y += c.vy * dt;
+
     // Pulsing jaw
     c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6;
   }
