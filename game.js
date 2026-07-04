@@ -121,6 +121,8 @@ const FALL_BASE = 1.2;       // starting descent speed (px/frame)
 const FALL_GROWTH = 0.035;   // added per second survived
 const FALL_MAX = 7;          // cap on descent speed
 
+const RETRACT_SPEED = 14;    // upward speed once the claw retracts (px/frame)
+
 function secondsElapsed() {
   return (performance.now() - runStartTime) / 1000;
 }
@@ -135,6 +137,7 @@ function spawnClaw() {
     armLen: 30,
     jawOpen: 18,
     grabbing: false,
+    retracting: false,
     color: '#e44',
   });
 }
@@ -151,25 +154,38 @@ function updateClaws(dt) {
   const fallSpeed = Math.min(FALL_BASE + t * FALL_GROWTH, FALL_MAX);
 
   for (let c of claws) {
-    // AI pursuit: steer horizontally toward the bunny's current position —
-    // but only until the claw reaches the 2/3-down lock point, after which
-    // it commits to a straight-down descent with no more side-to-side motion.
-    if (c.y < CLAW_LOCK_Y) {
-      const dx = player.x - c.x;
-      const step = Math.min(Math.abs(dx), homingSpeed * dt);
-      c.x += Math.sign(dx) * step;
-      c.x = Math.max(24, Math.min(W - 24, c.x));
-    }
+    if (!c.retracting) {
+      // AI pursuit: steer horizontally toward the bunny's current position —
+      // but only until the claw reaches the 2/3-down lock point, after which
+      // it commits to a straight-down descent with no more side-to-side motion.
+      if (c.y < CLAW_LOCK_Y) {
+        const dx = player.x - c.x;
+        const step = Math.min(Math.abs(dx), homingSpeed * dt);
+        c.x += Math.sign(dx) * step;
+        c.x = Math.max(24, Math.min(W - 24, c.x));
+      }
 
-    // Descend — speed increases the longer the bunny survives.
-    c.vy = fallSpeed;
-    c.y += c.vy * dt;
+      // Descend — speed increases the longer the bunny survives.
+      c.vy = fallSpeed;
+      c.y += c.vy * dt;
+
+      // Reached the bottom of the box — snap into a quick retract back up
+      // instead of continuing on to simply vanish off-screen.
+      if (clawTipY(c) >= FLOOR_Y) {
+        c.retracting = true;
+      }
+    } else {
+      // Quickly retract straight back up toward the spawn point.
+      c.vy = -RETRACT_SPEED;
+      c.y += c.vy * dt;
+    }
 
     // Pulsing jaw
     c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6;
   }
-  // Remove claws that have left the screen
-  claws = claws.filter(c => c.y < H + 60);
+  // Remove claws once they've either left the screen while falling, or have
+  // fully retracted back up past the spawn point.
+  claws = claws.filter(c => c.retracting ? c.y > CLAW_SPAWN_Y : c.y < H + 60);
 }
 
 // ─── Collision ────────────────────────────────────────────────────────────────
