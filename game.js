@@ -54,6 +54,14 @@ function init() {
 
 const FLOOR_Y = H - 6; // resting line for items sitting in the bottom of the box
 
+// Beach-ball rolling tuning — the ball is the only obstacle that reacts to
+// contact by rolling instead of just blocking/supporting the player.
+const BALL_ROLL_ACCEL = 0.9;  // nudge applied to ball speed per frame of contact (px/frame)
+const BALL_CARRY_FACTOR = 0.35; // how much of the player's own speed is imparted while stood on
+const BALL_MAX_SPEED = 4;     // cap on rolling speed so it stays controllable
+const BALL_FRICTION = 0.93;   // per-frame decay so the ball rolls to a stop
+const BALL_BOUNDS_PAD = 4;    // keep the ball from rolling off the box edges
+
 function initObstacles() {
   const specs = [
     { kind: 'turtle', w: 46, h: 24, xFrac: 0.16 },
@@ -67,6 +75,8 @@ function initObstacles() {
     h: s.h,
     x: W * s.xFrac - s.w / 2,
     y: FLOOR_Y - s.h,
+    vx: 0,     // rolling velocity (beach ball only)
+    angle: 0,  // rotation angle for the rolling animation (beach ball only)
   }));
 }
 
@@ -84,29 +94,66 @@ function resolveObstacle(p, ob) {
 
   if (distSq >= p.r * p.r) return; // no overlap
 
+  let stoodOn = false;
+
   if (distSq > 0) {
     const dist = Math.sqrt(distSq);
     const nx = dx / dist, ny = dy / dist;
     const overlap = p.r - dist;
     p.x += nx * overlap;
     p.y += ny * overlap;
-    if (ny < -0.5) p.grounded = true;
+    if (ny < -0.5) { p.grounded = true; stoodOn = true; }
   } else {
     // Player center is inside the box (rare, e.g. teleport/large step) —
     // push out along whichever edge is closest.
     const dLeft = p.x - left, dRight = right - p.x;
     const dTop = p.y - top, dBottom = bottom - p.y;
     const min = Math.min(dLeft, dRight, dTop, dBottom);
-    if (min === dTop) { p.y = top - p.r; p.grounded = true; }
+    if (min === dTop) { p.y = top - p.r; p.grounded = true; stoodOn = true; }
     else if (min === dBottom) p.y = bottom + p.r;
     else if (min === dLeft) p.x = left - p.r;
     else p.x = right + p.r;
+  }
+
+  // Beach ball rolls when touched from the side (kicked away from the
+  // player, whichever side was hit) or stood on (carried along with the
+  // player's own horizontal movement, like walking on top of a ball).
+  if (ob.kind === 'ball') {
+    if (stoodOn) {
+      ob.vx += p.vx * BALL_CARRY_FACTOR;
+    } else {
+      const cx = ob.x + ob.w / 2;
+      const awayDir = cx >= p.x ? 1 : -1; // roll away from the player's side
+      ob.vx += awayDir * BALL_ROLL_ACCEL;
+    }
+    ob.vx = Math.max(-BALL_MAX_SPEED, Math.min(BALL_MAX_SPEED, ob.vx));
   }
 }
 
 function resolveObstacles() {
   player.grounded = player.y >= H - player.r - 0.5; // resting on box floor
   for (const ob of obstacles) resolveObstacle(player, ob);
+}
+
+// Advances the beach ball's rolling motion: moves it by its current speed,
+// spins its rotation to match (so it visibly rolls rather than slides),
+// keeps it within the box, and lets friction bring it back to rest.
+function updateObstacles(dt) {
+  for (const ob of obstacles) {
+    if (ob.kind !== 'ball' || ob.vx === 0) continue;
+
+    ob.x += ob.vx * dt;
+
+    const minX = BALL_BOUNDS_PAD;
+    const maxX = W - BALL_BOUNDS_PAD - ob.w;
+    if (ob.x < minX) { ob.x = minX; ob.vx = 0; }
+    else if (ob.x > maxX) { ob.x = maxX; ob.vx = 0; }
+
+    ob.angle += (ob.vx / (ob.w / 2)) * dt; // rolling rotation matches travel distance
+
+    ob.vx *= BALL_FRICTION;
+    if (Math.abs(ob.vx) < 0.02) ob.vx = 0;
+  }
 }
 
 // ─── Claw AI ──────────────────────────────────────────────────────────────────
@@ -321,8 +368,11 @@ function drawObstacle(ob) {
 
   } else if (ob.kind === 'ball') {
     const r = ob.w / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ob.angle || 0); // spins to visualize rolling when touched/stood on
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fillStyle = '#eee';
     ctx.fill();
     ctx.strokeStyle = '#999';
@@ -332,12 +382,13 @@ function drawObstacle(ob) {
     const stripeColors = ['#e44', '#4af', '#fc4'];
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, r, (Math.PI * 2 / 6) * (i * 2), (Math.PI * 2 / 6) * (i * 2 + 1));
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, r, (Math.PI * 2 / 6) * (i * 2), (Math.PI * 2 / 6) * (i * 2 + 1));
       ctx.closePath();
       ctx.fillStyle = stripeColors[i];
       ctx.fill();
     }
+    ctx.restore();
 
   } else if (ob.kind === 'bear') {
     // Ears
@@ -530,6 +581,7 @@ function loop(ts) {
     handleInput();
     updatePlayerPhysics();
     resolveObstacles();
+    updateObstacles(dt);
     updateClaws(dt);
 
     // Spawn a new claw only once the current one is gone, so only one
