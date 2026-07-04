@@ -170,7 +170,12 @@ const FALL_BASE = 1.2;       // starting descent speed (px/frame)
 const FALL_GROWTH = 0.035;   // added per second survived
 const FALL_MAX = 7;          // cap on descent speed
 
-const RETRACT_SPEED = 14;    // upward speed once the claw retracts (px/frame)
+const RETRACT_SPEED = 14;    // reference speed used to size the eased retract's duration (px/frame)
+
+// Ease-out cubic: fast at the start, smoothly decelerating toward the end —
+// used so the claw's upward retract slows into its finish instead of moving
+// at one constant speed the whole way up.
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 
 function secondsElapsed() {
   return (performance.now() - runStartTime) / 1000;
@@ -223,11 +228,20 @@ function updateClaws(dt) {
       // a quick retract back up instead of continuing to descend/vanish.
       if (clawTipY(c) >= FLOOR_Y || clawHitsObstacle(c)) {
         c.retracting = true;
+        c.retractFromY = c.y;
+        c.retractElapsed = 0;
+        // Size the ease's total duration off the old constant retract speed,
+        // so a claw that starts retracting further down still takes
+        // proportionally longer, same as before — only the speed *curve*
+        // along the way changes from constant to eased.
+        c.retractDuration = Math.max(0.15, (c.retractFromY - CLAW_SPAWN_Y) / RETRACT_SPEED);
       }
     } else {
-      // Quickly retract straight back up toward the spawn point.
-      c.vy = -RETRACT_SPEED;
-      c.y += c.vy * dt;
+      // Ease-out retract: climbs quickly at first, then smoothly slows as it
+      // nears the top of its travel, instead of moving at one fixed speed.
+      c.retractElapsed = Math.min(c.retractElapsed + dt, c.retractDuration);
+      const progress = easeOutCubic(c.retractElapsed / c.retractDuration);
+      c.y = c.retractFromY + (CLAW_SPAWN_Y - c.retractFromY) * progress;
     }
 
     // Pulsing jaw
