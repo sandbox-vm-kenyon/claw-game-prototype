@@ -218,9 +218,10 @@ function updateClaws(dt) {
       c.vy = fallSpeed;
       c.y += c.vy * dt;
 
-      // Reached the bottom of the box — snap into a quick retract back up
-      // instead of continuing on to simply vanish off-screen.
-      if (clawTipY(c) >= FLOOR_Y) {
+      // Reached the bottom of the box, or clipped a non-player obstacle
+      // (turtle, crate, ball, bear) on the way down — either way, snap into
+      // a quick retract back up instead of continuing to descend/vanish.
+      if (clawTipY(c) >= FLOOR_Y || clawHitsObstacle(c)) {
         c.retracting = true;
       }
     } else {
@@ -242,6 +243,29 @@ function updateClaws(dt) {
 function clawTipY(c) { return c.y + c.armLen; }
 function clawTipLeft(c) { return c.x - c.jawOpen; }
 function clawTipRight(c) { return c.x + c.jawOpen; }
+
+// Circle (jaw tip) vs axis-aligned rectangle (obstacle) overlap test —
+// same closest-point approach used for player/obstacle collision above.
+function circleRectOverlap(cx, cy, cr, ob) {
+  const left = ob.x, right = ob.x + ob.w, top = ob.y, bottom = ob.y + ob.h;
+  const closestX = Math.max(left, Math.min(cx, right));
+  const closestY = Math.max(top, Math.min(cy, bottom));
+  const dx = cx - closestX, dy = cy - closestY;
+  return (dx * dx + dy * dy) < cr * cr;
+}
+
+// True once either jaw tip touches any non-player obstacle (turtle, crate,
+// ball, bear) while descending — used to trigger the same quick retract
+// that normally only fires on reaching the box floor.
+function clawHitsObstacle(c) {
+  const tipY = clawTipY(c);
+  const tipR = 6; // matches the drawn jaw-tip circles (r=4) plus a small margin
+  for (const ob of obstacles) {
+    if (circleRectOverlap(clawTipLeft(c), tipY, tipR, ob)) return true;
+    if (circleRectOverlap(clawTipRight(c), tipY, tipR, ob)) return true;
+  }
+  return false;
+}
 
 function checkCollision() {
   for (let c of claws) {
