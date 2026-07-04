@@ -113,9 +113,9 @@ function resolveObstacles() {
 // chase) speed and the descent speed ramp up the longer the run lasts, so the
 // hook gets more relentless over time regardless of score.
 
-const HOMING_BASE = 0.9;     // starting horizontal pursuit speed (px/frame)
-const HOMING_GROWTH = 0.06;  // added per second survived
-const HOMING_MAX = 6.5;      // cap so it stays beatable
+const HOMING_BASE = 0.45;    // starting horizontal pursuit speed (px/frame)
+const HOMING_GROWTH = 0.03;  // added per second survived
+const HOMING_MAX = 3.25;     // cap so it stays beatable
 
 const FALL_BASE = 1.2;       // starting descent speed (px/frame)
 const FALL_GROWTH = 0.035;   // added per second survived
