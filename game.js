@@ -138,17 +138,27 @@ function spawnClaw() {
   });
 }
 
+const CLAW_SPAWN_Y = -40;
+// Once a claw has descended 2/3 of the way from its spawn point to the box
+// floor, it locks onto a straight-down drop: horizontal pursuit stops so the
+// final third of the descent is a plain vertical strike.
+const CLAW_LOCK_Y = CLAW_SPAWN_Y + (H - CLAW_SPAWN_Y) * (2 / 3);
+
 function updateClaws(dt) {
   const t = secondsElapsed();
   const homingSpeed = Math.min(HOMING_BASE + t * HOMING_GROWTH, HOMING_MAX);
   const fallSpeed = Math.min(FALL_BASE + t * FALL_GROWTH, FALL_MAX);
 
   for (let c of claws) {
-    // AI pursuit: steer horizontally toward the bunny's current position.
-    const dx = player.x - c.x;
-    const step = Math.min(Math.abs(dx), homingSpeed * dt);
-    c.x += Math.sign(dx) * step;
-    c.x = Math.max(24, Math.min(W - 24, c.x));
+    // AI pursuit: steer horizontally toward the bunny's current position —
+    // but only until the claw reaches the 2/3-down lock point, after which
+    // it commits to a straight-down descent with no more side-to-side motion.
+    if (c.y < CLAW_LOCK_Y) {
+      const dx = player.x - c.x;
+      const step = Math.min(Math.abs(dx), homingSpeed * dt);
+      c.x += Math.sign(dx) * step;
+      c.x = Math.max(24, Math.min(W - 24, c.x));
+    }
 
     // Descend — speed increases the longer the bunny survives.
     c.vy = fallSpeed;
