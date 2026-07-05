@@ -62,6 +62,15 @@ const BALL_MAX_SPEED = 4;     // cap on rolling speed so it stays controllable
 const BALL_FRICTION = 0.93;   // per-frame decay so the ball rolls to a stop
 const BALL_BOUNDS_PAD = 4;    // keep the ball from rolling off the box edges
 
+// Beach-ball bounce tuning — being light, the ball also pops up a little
+// and bounces (loses some height each bounce, then settles) any time it's
+// freshly hit, whether landed on from above or bumped from the side.
+const BALL_GRAVITY = 0.5;           // downward acceleration pulling the ball back to the floor (px/frame^2)
+const BALL_BOUNCE_RESTITUTION = 0.5; // fraction of impact speed kept on each bounce off the floor
+const BALL_POP_LAND = -6;           // upward pop applied when the player lands on top of it (px/frame)
+const BALL_POP_SIDE = -3;           // smaller upward pop applied when bumped from the side (px/frame)
+const BALL_MIN_BOUNCE_VY = 0.6;     // once a floor bounce would be slower than this, just settle instead
+
 // Turtle tuning — the turtle is the only obstacle that walks on its own,
 // and only while the player is currently standing on top of it.
 const TURTLE_SPEED = 0.5;     // slow crawl speed while ridden (px/frame)
@@ -81,9 +90,12 @@ function initObstacles() {
     x: W * s.xFrac - s.w / 2,
     y: FLOOR_Y - s.h,
     vx: 0,     // rolling velocity (beach ball only)
+    vy: 0,     // vertical bounce velocity (beach ball only)
     angle: 0,  // rotation angle for the rolling animation (beach ball only)
     dir: 1,        // crawl direction (turtle only)
     stoodOn: false, // whether the player is standing on it this frame (turtle only)
+    touching: false,    // whether the player is touching it this frame (beach ball only)
+    wasTouching: false, // touching state from the previous frame, used to detect a fresh impact (beach ball only)
   }));
 }
 
@@ -125,7 +137,9 @@ function resolveObstacle(p, ob) {
   // Beach ball rolls when touched from the side (kicked away from the
   // player, whichever side was hit) or stood on (carried along with the
   // player's own horizontal movement, like walking on top of a ball).
+  // Being light, it also pops up a little on a fresh hit and bounces.
   if (ob.kind === 'ball') {
+    ob.touching = true;
     if (stoodOn) {
       ob.vx += p.vx * BALL_CARRY_FACTOR;
     } else {
@@ -134,6 +148,14 @@ function resolveObstacle(p, ob) {
       ob.vx += awayDir * BALL_ROLL_ACCEL;
     }
     ob.vx = Math.max(-BALL_MAX_SPEED, Math.min(BALL_MAX_SPEED, ob.vx));
+
+    if (!ob.wasTouching) {
+      // Fresh contact this frame (not still resting against the player from
+      // last frame) — give it an upward pop, bigger when landed on from
+      // above than when just bumped from the side.
+      const pop = stoodOn ? BALL_POP_LAND : BALL_POP_SIDE;
+      ob.vy = Math.min(ob.vy, pop);
+    }
   }
 
   // Turtle only crawls while it's currently being stood on — see updateObstacles.
@@ -144,29 +166,44 @@ function resolveObstacles() {
   player.grounded = player.y >= H - player.r - 0.5; // resting on box floor
   for (const ob of obstacles) {
     if (ob.kind === 'turtle') ob.stoodOn = false; // recomputed below each frame
+    if (ob.kind === 'ball') { ob.wasTouching = ob.touching; ob.touching = false; } // recomputed below each frame
   }
   for (const ob of obstacles) resolveObstacle(player, ob);
 }
 
 // Advances the beach ball's rolling motion: moves it by its current speed,
 // spins its rotation to match (so it visibly rolls rather than slides),
-// keeps it within the box, and lets friction bring it back to rest.
+// keeps it within the box, and lets friction bring it back to rest. Also
+// advances its vertical pop/bounce: once popped upward by a fresh hit,
+// gravity pulls it back down and it bounces off the floor, losing height
+// each bounce, until it settles back at rest.
 function updateObstacles(dt) {
   for (const ob of obstacles) {
     if (ob.kind === 'ball') {
-      if (ob.vx === 0) continue;
+      if (ob.vx !== 0) {
+        ob.x += ob.vx * dt;
 
-      ob.x += ob.vx * dt;
+        const minX = BALL_BOUNDS_PAD;
+        const maxX = W - BALL_BOUNDS_PAD - ob.w;
+        if (ob.x < minX) { ob.x = minX; ob.vx = 0; }
+        else if (ob.x > maxX) { ob.x = maxX; ob.vx = 0; }
 
-      const minX = BALL_BOUNDS_PAD;
-      const maxX = W - BALL_BOUNDS_PAD - ob.w;
-      if (ob.x < minX) { ob.x = minX; ob.vx = 0; }
-      else if (ob.x > maxX) { ob.x = maxX; ob.vx = 0; }
+        ob.angle += (ob.vx / (ob.w / 2)) * dt; // rolling rotation matches travel distance
 
-      ob.angle += (ob.vx / (ob.w / 2)) * dt; // rolling rotation matches travel distance
+        ob.vx *= BALL_FRICTION;
+        if (Math.abs(ob.vx) < 0.02) ob.vx = 0;
+      }
 
-      ob.vx *= BALL_FRICTION;
-      if (Math.abs(ob.vx) < 0.02) ob.vx = 0;
+      const groundY = FLOOR_Y - ob.h;
+      if (ob.y < groundY || ob.vy !== 0) {
+        ob.vy += BALL_GRAVITY * dt;
+        ob.y += ob.vy * dt;
+        if (ob.y >= groundY) {
+          ob.y = groundY;
+          if (ob.vy > BALL_MIN_BOUNCE_VY) ob.vy = -ob.vy * BALL_BOUNCE_RESTITUTION; // bounce, losing energy
+          else ob.vy = 0; // settle
+        }
+      }
 
     } else if (ob.kind === 'turtle') {
       if (!ob.stoodOn) continue; // only crawls while the player is riding it
