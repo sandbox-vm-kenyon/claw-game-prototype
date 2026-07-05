@@ -234,14 +234,31 @@ function updateObstacles(dt) {
     } else if (ob.kind === 'turtle') {
       if (!ob.stoodOn) continue; // only crawls while the player is riding it
 
-      const delta = ob.dir * TURTLE_SPEED * dt;
-      ob.x += delta;
-      player.x += delta; // carry the rider along like a moving platform
+      const startX = ob.x;
+      ob.x += ob.dir * TURTLE_SPEED * dt;
 
       const minX = TURTLE_BOUNDS_PAD;
       const maxX = W - TURTLE_BOUNDS_PAD - ob.w;
       if (ob.x < minX) { ob.x = minX; ob.dir = 1; }
       else if (ob.x > maxX) { ob.x = maxX; ob.dir = -1; }
+
+      // Also turn around at any other obstacle in its path (e.g. the wooden
+      // crate sitting right next to it) instead of crawling into/through it —
+      // without this, the turtle would wedge itself into its neighbor and
+      // knock the rider off instead of carrying them back and forth like a
+      // proper moving platform, which made the ride look like it "stopped
+      // working" shortly after it started.
+      for (const other of obstacles) {
+        if (other === ob) continue;
+        const overlapY = Math.min(ob.y + ob.h, other.y + other.h) - Math.max(ob.y, other.y);
+        if (overlapY <= 0) continue;
+        if (ob.x + ob.w > other.x && ob.x < other.x + other.w) {
+          if (ob.dir > 0) { ob.x = other.x - ob.w; ob.dir = -1; }
+          else { ob.x = other.x + other.w; ob.dir = 1; }
+        }
+      }
+
+      player.x += ob.x - startX; // carry the rider exactly as far as it actually moved
     }
   }
 }
