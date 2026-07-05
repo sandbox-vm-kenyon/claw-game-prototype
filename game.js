@@ -62,6 +62,11 @@ const BALL_MAX_SPEED = 4;     // cap on rolling speed so it stays controllable
 const BALL_FRICTION = 0.93;   // per-frame decay so the ball rolls to a stop
 const BALL_BOUNDS_PAD = 4;    // keep the ball from rolling off the box edges
 
+// Turtle tuning — the turtle is the only obstacle that walks on its own,
+// and only while the player is currently standing on top of it.
+const TURTLE_SPEED = 0.5;     // slow crawl speed while ridden (px/frame)
+const TURTLE_BOUNDS_PAD = 4;  // keep the turtle from crawling off the box edges
+
 function initObstacles() {
   const specs = [
     { kind: 'turtle', w: 46, h: 24, xFrac: 0.16 },
@@ -77,6 +82,8 @@ function initObstacles() {
     y: FLOOR_Y - s.h,
     vx: 0,     // rolling velocity (beach ball only)
     angle: 0,  // rotation angle for the rolling animation (beach ball only)
+    dir: 1,        // crawl direction (turtle only)
+    stoodOn: false, // whether the player is standing on it this frame (turtle only)
   }));
 }
 
@@ -128,10 +135,16 @@ function resolveObstacle(p, ob) {
     }
     ob.vx = Math.max(-BALL_MAX_SPEED, Math.min(BALL_MAX_SPEED, ob.vx));
   }
+
+  // Turtle only crawls while it's currently being stood on — see updateObstacles.
+  if (ob.kind === 'turtle' && stoodOn) ob.stoodOn = true;
 }
 
 function resolveObstacles() {
   player.grounded = player.y >= H - player.r - 0.5; // resting on box floor
+  for (const ob of obstacles) {
+    if (ob.kind === 'turtle') ob.stoodOn = false; // recomputed below each frame
+  }
   for (const ob of obstacles) resolveObstacle(player, ob);
 }
 
@@ -140,19 +153,33 @@ function resolveObstacles() {
 // keeps it within the box, and lets friction bring it back to rest.
 function updateObstacles(dt) {
   for (const ob of obstacles) {
-    if (ob.kind !== 'ball' || ob.vx === 0) continue;
+    if (ob.kind === 'ball') {
+      if (ob.vx === 0) continue;
 
-    ob.x += ob.vx * dt;
+      ob.x += ob.vx * dt;
 
-    const minX = BALL_BOUNDS_PAD;
-    const maxX = W - BALL_BOUNDS_PAD - ob.w;
-    if (ob.x < minX) { ob.x = minX; ob.vx = 0; }
-    else if (ob.x > maxX) { ob.x = maxX; ob.vx = 0; }
+      const minX = BALL_BOUNDS_PAD;
+      const maxX = W - BALL_BOUNDS_PAD - ob.w;
+      if (ob.x < minX) { ob.x = minX; ob.vx = 0; }
+      else if (ob.x > maxX) { ob.x = maxX; ob.vx = 0; }
 
-    ob.angle += (ob.vx / (ob.w / 2)) * dt; // rolling rotation matches travel distance
+      ob.angle += (ob.vx / (ob.w / 2)) * dt; // rolling rotation matches travel distance
 
-    ob.vx *= BALL_FRICTION;
-    if (Math.abs(ob.vx) < 0.02) ob.vx = 0;
+      ob.vx *= BALL_FRICTION;
+      if (Math.abs(ob.vx) < 0.02) ob.vx = 0;
+
+    } else if (ob.kind === 'turtle') {
+      if (!ob.stoodOn) continue; // only crawls while the player is riding it
+
+      const delta = ob.dir * TURTLE_SPEED * dt;
+      ob.x += delta;
+      player.x += delta; // carry the rider along like a moving platform
+
+      const minX = TURTLE_BOUNDS_PAD;
+      const maxX = W - TURTLE_BOUNDS_PAD - ob.w;
+      if (ob.x < minX) { ob.x = minX; ob.dir = 1; }
+      else if (ob.x > maxX) { ob.x = maxX; ob.dir = -1; }
+    }
   }
 }
 
