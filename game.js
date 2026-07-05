@@ -248,8 +248,14 @@ function updateClaws(dt) {
     c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6;
   }
   // Remove claws once they've either left the screen while falling, or have
-  // fully retracted back up past the spawn point.
-  claws = claws.filter(c => c.retracting ? c.y > CLAW_SPAWN_Y : c.y < H + 60);
+  // fully retracted back up past the spawn point. The retract completion is
+  // judged by retractElapsed reaching retractDuration (exact, since it's
+  // clamped with Math.min) rather than by comparing c.y to CLAW_SPAWN_Y —
+  // the eased position calculation can leave c.y a hair above CLAW_SPAWN_Y
+  // due to floating-point rounding even once progress reaches 1, which let
+  // a fully-retracted claw sit stuck forever and silently blocked all future
+  // spawns (since spawnClaw() only fires once claws.length reaches 0).
+  claws = claws.filter(c => c.retracting ? c.retractElapsed < c.retractDuration : c.y < H + 60);
 }
 
 // ─── Collision ────────────────────────────────────────────────────────────────
