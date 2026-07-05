@@ -281,17 +281,40 @@ function clawHitsObstacle(c) {
   return false;
 }
 
+// Only the two jaw/finger tips are harmful — the arm and body block ("the
+// top of the claw") are safe to touch and are handled as a standable
+// platform instead (see resolveClawBodies below). Each finger tip is tested
+// as a small circle at its exact drawn position, not a loose box around the
+// whole jaw level, so bumping the underside of the body no longer counts as
+// a hit.
+const FINGER_HIT_R = 8; // matches the drawn 4px tip plus a small margin
+
 function checkCollision() {
   for (let c of claws) {
     const tipY = clawTipY(c);
-    const dx = Math.abs(player.x - c.x);
-    const dy = Math.abs(player.y - tipY);
-    // Circle vs rough claw-jaw bounding box
-    if (dx < c.jawOpen + player.r && dy < player.r + 10) {
-      return true;
+    for (const tipX of [clawTipLeft(c), clawTipRight(c)]) {
+      const dx = player.x - tipX;
+      const dy = player.y - tipY;
+      const rr = player.r + FINGER_HIT_R;
+      if (dx * dx + dy * dy < rr * rr) return true;
     }
   }
   return false;
+}
+
+// ─── Claw body ("top") — standable, non-harmful ───────────────────────────
+// The boxy mechanism above the jaws (drawn in drawClaw as the red block) is
+// treated exactly like a static obstacle: landing on it supports the player
+// (standable top) and bumping its sides just blocks movement — never harm.
+const CLAW_BODY_W = 28;
+const CLAW_BODY_H = 18;
+
+function clawBodyRect(c) {
+  return { x: c.x - CLAW_BODY_W / 2, y: c.y - 14, w: CLAW_BODY_W, h: CLAW_BODY_H };
+}
+
+function resolveClawBodies() {
+  for (const c of claws) resolveObstacle(player, clawBodyRect(c));
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -619,6 +642,7 @@ function loop(ts) {
     handleInput();
     updatePlayerPhysics();
     resolveObstacles();
+    resolveClawBodies();
     updateObstacles(dt);
     updateClaws(dt);
 
