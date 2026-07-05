@@ -277,7 +277,8 @@ const FALL_BASE = 1.2;       // starting descent speed (px/frame)
 const FALL_GROWTH = 0.035;   // added per second survived
 const FALL_MAX = 7;          // cap on descent speed
 
-const RETRACT_SPEED = 14;    // reference speed used to size the eased retract's duration (px/frame)
+const RETRACT_SPEED = 7;     // reference speed used to size the eased retract's duration (px/frame)
+                              // lower value = longer duration = slower upward retract overall
 
 // Ease-out cubic: fast at the start, smoothly decelerating toward the end —
 // used so the claw's upward retract slows into its finish instead of moving
