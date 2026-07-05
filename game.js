@@ -160,6 +160,11 @@ function resolveObstacle(p, ob) {
 
   // Turtle only crawls while it's currently being stood on — see updateObstacles.
   if (ob.kind === 'turtle' && stoodOn) ob.stoodOn = true;
+
+  // Claw body only records the rider so updateClaws can carry the player
+  // along with its own vertical movement (descending or retracting) — see
+  // updateClaws, which mirrors the turtle's horizontal-carry approach above.
+  if (ob.kind === 'clawBody' && stoodOn) ob.claw.stoodOn = true;
 }
 
 function resolveObstacles() {
@@ -300,6 +305,7 @@ function spawnClaw() {
     jawOpen: 18,
     grabbing: false,
     retracting: false,
+    stoodOn: false, // whether the player is currently standing on its body
     color: '#e44',
   });
 }
@@ -316,6 +322,8 @@ function updateClaws(dt) {
   const fallSpeed = Math.min(FALL_BASE + t * FALL_GROWTH, FALL_MAX);
 
   for (let c of claws) {
+    const prevY = c.y; // used below to carry a rider standing on the claw's body
+
     if (!c.retracting) {
       // AI pursuit: steer horizontally toward the bunny's current position —
       // but only until the claw reaches the 2/3-down lock point, after which
@@ -351,6 +359,13 @@ function updateClaws(dt) {
       const progress = easeOutCubic(c.retractElapsed / c.retractDuration);
       c.y = c.retractFromY + (CLAW_SPAWN_Y - c.retractFromY) * progress;
     }
+
+    // If the player is currently standing on this claw's body, carry them
+    // along with exactly however far it just moved (up while retracting,
+    // down while still descending) — same approach as the turtle carrying
+    // its rider horizontally in updateObstacles — so standing on the hook
+    // isn't fought against by gravity as it climbs away underneath them.
+    if (c.stoodOn) player.y += c.y - prevY;
 
     // Pulsing jaw
     c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6;
@@ -416,6 +431,13 @@ function checkCollision() {
   return false;
 }
 
+// The box's open top (y = 0) — the only way to ever reach it is by riding a
+// retracting claw all the way up, since normal jumping can't get anywhere
+// close. Getting crushed against it there is just as fatal as the claw's
+// fingers themselves, so a rider needs to hop off before it climbs that far.
+const CEILING_Y = 0;
+function touchesCeiling() { return player.y - player.r <= CEILING_Y; }
+
 // ─── Claw body ("top") — standable, non-harmful ───────────────────────────
 // The boxy mechanism above the jaws (drawn in drawClaw as the red block) is
 // treated exactly like a static obstacle: landing on it supports the player
@@ -424,10 +446,11 @@ const CLAW_BODY_W = 28;
 const CLAW_BODY_H = 18;
 
 function clawBodyRect(c) {
-  return { x: c.x - CLAW_BODY_W / 2, y: c.y - 14, w: CLAW_BODY_W, h: CLAW_BODY_H };
+  return { x: c.x - CLAW_BODY_W / 2, y: c.y - 14, w: CLAW_BODY_W, h: CLAW_BODY_H, kind: 'clawBody', claw: c };
 }
 
 function resolveClawBodies() {
+  for (const c of claws) c.stoodOn = false; // recomputed below each frame
   for (const c of claws) resolveObstacle(player, clawBodyRect(c));
 }
 
@@ -779,8 +802,9 @@ function loop(ts) {
     drawPlayer(player);
     drawHUD();
 
-    // Collision → start fade
-    if (checkCollision()) {
+    // Collision (claw fingers, or riding a claw into the box's ceiling) →
+    // start fade
+    if (checkCollision() || touchesCeiling()) {
       state = STATE.FADING;
       // Freeze player
     }
