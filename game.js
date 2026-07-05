@@ -171,6 +171,30 @@ function resolveObstacles() {
   for (const ob of obstacles) resolveObstacle(player, ob);
 }
 
+// Stops the beach ball from rolling/bouncing straight through the other box
+// objects (turtle, crate, bear): resolves rectangle-vs-rectangle overlap
+// between the ball and every other obstacle, pushing the ball out along
+// whichever axis has the smaller penetration so a side hit halts its roll
+// (like bumping into a wall) and landing on top rests it there instead of
+// clipping into the object beneath.
+function resolveBallObstacleCollisions(ball) {
+  for (const ob of obstacles) {
+    if (ob === ball) continue;
+
+    const overlapX = Math.min(ball.x + ball.w, ob.x + ob.w) - Math.max(ball.x, ob.x);
+    const overlapY = Math.min(ball.y + ball.h, ob.y + ob.h) - Math.max(ball.y, ob.y);
+    if (overlapX <= 0 || overlapY <= 0) continue; // no overlap
+
+    if (overlapX < overlapY) {
+      if (ball.x < ob.x) ball.x -= overlapX; else ball.x += overlapX;
+      ball.vx = 0; // rolling halted by the side of the other object
+    } else {
+      if (ball.y < ob.y) { ball.y -= overlapY; ball.vy = 0; } // rests on top
+      else if (ball.vy < 0) ball.vy = 0; // blocked from below
+    }
+  }
+}
+
 // Advances the beach ball's rolling motion: moves it by its current speed,
 // spins its rotation to match (so it visibly rolls rather than slides),
 // keeps it within the box, and lets friction bring it back to rest. Also
@@ -204,6 +228,8 @@ function updateObstacles(dt) {
           else ob.vy = 0; // settle
         }
       }
+
+      resolveBallObstacleCollisions(ob);
 
     } else if (ob.kind === 'turtle') {
       if (!ob.stoodOn) continue; // only crawls while the player is riding it
