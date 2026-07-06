@@ -9,7 +9,7 @@ const H = canvas.height;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4 };
+const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4, PLATFORM_FADING: 5 };
 
 let state, player, claws, obstacles, score, fadeAlpha, fadeSpeed, gameOverAlpha;
 let runStartTime;
@@ -486,6 +486,8 @@ function initPlatformLevel() {
   player.vx = 0;
   player.vy = 0;
   player.grounded = true;
+
+  initHoverClaw();
 }
 
 function updatePlatformLevel(dt) {
@@ -546,6 +548,108 @@ function drawPlatformHUD() {
   ctx.font = 'bold 13px monospace';
   ctx.fillStyle = '#3a3a3a';
   ctx.fillText('OUT OF THE MACHINE!', 12, 44);
+}
+
+// ─── Platform-level hovering claw ──────────────────────────────────────────
+// A second claw haunts the rooftop level — unlike the box's claw, it has no
+// cable/arm running up off the top of the screen; it just hovers, drifting
+// slowly back and forth, then swoops down in a fast arc to try to catch the
+// bunny whenever they run underneath it while moving right, before rising
+// back up to resume hovering (further along, tracking the bunny's progress).
+const HOVER_CLAW_Y = 70;              // altitude (px from top) the claw hovers/returns to
+const HOVER_PATROL_SPEED = 0.02;      // radians of drift per dt-unit while hovering
+const HOVER_PATROL_AMPLITUDE = 90;    // px either side of the current patrol center
+const HOVER_SWOOP_TRIGGER_RANGE = 70; // px — how close (in x) the bunny must be, moving right, to provoke a dive
+const HOVER_SWOOP_ADVANCE = 120;      // px the claw's hover point shifts forward after each swoop
+const HOVER_SWOOP_DURATION = 34;      // dt-units for a full dive-and-rise arc (~0.55s)
+const HOVER_SWOOP_COOLDOWN = 50;      // dt-units of hovering required before it can dive again
+
+let hoverClaw;
+
+function initHoverClaw() {
+  hoverClaw = {
+    x: 300, y: HOVER_CLAW_Y,
+    patrolCenter: 300, patrolT: 0,
+    armLen: 14, jawOpen: 18,
+    swooping: false, swoopElapsed: 0, cooldown: 0,
+    swoopStartX: 0, swoopEndX: 0, swoopDiveY: 0,
+  };
+}
+
+function updateHoverClaw(dt) {
+  const c = hoverClaw;
+  c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6; // pulsing jaw, same look as the box claw
+
+  if (c.swooping) {
+    // One continuous arc: dives from hover height down toward the bunny's
+    // position at trigger time, then rises back up to hover height further
+    // along, tracing a smooth curve (fast down, fast back up) rather than a
+    // straight line.
+    c.swoopElapsed = Math.min(c.swoopElapsed + dt, HOVER_SWOOP_DURATION);
+    const t = c.swoopElapsed / HOVER_SWOOP_DURATION;
+    c.x = c.swoopStartX + (c.swoopEndX - c.swoopStartX) * t;
+    c.y = HOVER_CLAW_Y + (c.swoopDiveY - HOVER_CLAW_Y) * Math.sin(Math.PI * t);
+    if (t >= 1) {
+      c.swooping = false;
+      c.y = HOVER_CLAW_Y;
+      c.patrolCenter = c.swoopEndX;
+      c.patrolT = 0;
+      c.cooldown = HOVER_SWOOP_COOLDOWN;
+    }
+    return;
+  }
+
+  if (c.cooldown > 0) c.cooldown -= dt;
+
+  // Hover/patrol: drift slowly side to side at a fixed altitude while
+  // watching for the bunny to run underneath it moving right.
+  c.patrolT += dt * HOVER_PATROL_SPEED;
+  c.x = c.patrolCenter + Math.sin(c.patrolT) * HOVER_PATROL_AMPLITUDE;
+  c.x = Math.max(40, Math.min(W - 40, c.x));
+  c.y = HOVER_CLAW_Y;
+
+  if (c.cooldown <= 0 && player.vx > 0 && Math.abs(player.x - c.x) < HOVER_SWOOP_TRIGGER_RANGE) {
+    c.swooping = true;
+    c.swoopElapsed = 0;
+    c.swoopStartX = c.x;
+    c.swoopEndX = Math.max(40, Math.min(W - 40, c.x + HOVER_SWOOP_ADVANCE));
+    c.swoopDiveY = Math.min(player.y - 6, H - 40);
+  }
+}
+
+function drawHoverClaw(c) {
+  // Body block — floats freely with no cable/arm running up off the top of
+  // the screen, unlike the box's claw (see drawClaw).
+  ctx.fillStyle = '#c33';
+  ctx.fillRect(c.x - 14, c.y - 14, 28, 18);
+  ctx.strokeStyle = '#f66';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(c.x - 14, c.y - 14, 28, 18);
+
+  const tipY = clawTipY(c);
+
+  ctx.strokeStyle = '#e44';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(c.x, c.y + 4); ctx.lineTo(clawTipLeft(c), tipY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(c.x, c.y + 4); ctx.lineTo(clawTipRight(c), tipY); ctx.stroke();
+
+  ctx.fillStyle = '#f88';
+  ctx.beginPath(); ctx.arc(clawTipLeft(c),  tipY, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(clawTipRight(c), tipY, 4, 0, Math.PI * 2); ctx.fill();
+}
+
+// Same finger-tip-only hit test as the box claw's checkCollision — only the
+// jaw tips are harmful, so a near-miss on the body doesn't count.
+function checkHoverClawCollision(c) {
+  const tipY = clawTipY(c);
+  for (const tipX of [clawTipLeft(c), clawTipRight(c)]) {
+    const dx = player.x - tipX;
+    const dy = player.y - tipY;
+    const rr = player.r + FINGER_HIT_R;
+    if (dx * dx + dy * dy < rr * rr) return true;
+  }
+  return false;
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -933,11 +1037,33 @@ function loop(ts) {
 
   } else if (state === STATE.PLATFORM) {
     updatePlatformLevel(dt);
+    updateHoverClaw(dt);
 
     drawPlatformBackground();
     drawPlatforms();
+    drawHoverClaw(hoverClaw);
     drawPlayer(player);
     drawPlatformHUD();
+
+    // Caught by the hovering claw's swoop — fade to game over, same as
+    // getting caught by the box's claw.
+    if (checkHoverClawCollision(hoverClaw)) {
+      state = STATE.PLATFORM_FADING;
+    }
+
+  } else if (state === STATE.PLATFORM_FADING) {
+    drawPlatformBackground();
+    drawPlatforms();
+    drawHoverClaw(hoverClaw);
+    drawPlayer(player);
+    drawPlatformHUD();
+
+    fadeAlpha = Math.min(1, fadeAlpha + fadeSpeed);
+    drawFadeOverlay();
+
+    if (fadeAlpha >= 1) {
+      state = STATE.GAME_OVER;
+    }
 
   } else if (state === STATE.FADING) {
     // Scene stays visible underneath fade
