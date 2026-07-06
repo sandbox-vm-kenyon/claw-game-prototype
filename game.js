@@ -9,10 +9,17 @@ const H = canvas.height;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2 };
+const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4 };
 
 let state, player, claws, obstacles, score, fadeAlpha, fadeSpeed, gameOverAlpha;
 let runStartTime;
+
+// Pop-out transition (riding a retracting claw all the way to the box's
+// ceiling no longer kills the player — it launches them up and out of the
+// top of the machine into a second, platformer-style level).
+let popoutStartY, popoutElapsed;
+const POPOUT_DURATION = 30;  // dt-units (~0.5s at 60fps)
+const POPOUT_RISE = 140;     // extra px the player visibly rises during the pop
 
 // ─── Platformer physics tuning ─────────────────────────────────────────────
 const MOVE_SPEED = 3.2;
@@ -454,6 +461,93 @@ function resolveClawBodies() {
   for (const c of claws) resolveObstacle(player, clawBodyRect(c));
 }
 
+// ─── Platform Level (Phase 2) ──────────────────────────────────────────────
+// Popping out of the top of the claw machine drops the bunny onto its roof,
+// a small platformer stage with a few floating platforms to jump between.
+// Reuses the same move/jump physics and the existing generic obstacle
+// collision (resolveObstacle) — a plain rectangle with no special "kind"
+// just supports landing on top / blocks from the side, exactly like the box
+// obstacles do.
+
+let platforms;
+
+function initPlatformLevel() {
+  platforms = [
+    { x: 0,   y: H - 20,  w: W,   h: 20 },  // the machine's rooftop (safety-net ground)
+    { x: 40,  y: H - 120, w: 100, h: 16 },
+    { x: 330, y: H - 150, w: 110, h: 16 },
+    { x: 190, y: H - 230, w: 100, h: 16 },
+    { x: 90,  y: H - 330, w: 90,  h: 16 },
+    { x: 300, y: H - 340, w: 90,  h: 16 },
+  ];
+
+  player.x = W / 2;
+  player.y = H - 20 - player.r;
+  player.vx = 0;
+  player.vy = 0;
+  player.grounded = true;
+}
+
+function updatePlatformLevel(dt) {
+  handleInput();
+
+  player.vy = Math.min(player.vy + GRAVITY, MAX_FALL_SPEED);
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+  player.grounded = false;
+
+  for (const plat of platforms) resolveObstacle(player, plat);
+
+  player.x = Math.max(player.r, Math.min(W - player.r, player.x));
+  // The rooftop ground spans the full width, so this is just a safety net —
+  // it should never actually trigger.
+  if (player.y > H + 60) { player.y = H - 20 - player.r; player.vy = 0; }
+}
+
+function drawPlatformBackground() {
+  const grd = ctx.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, '#6ec6ff');
+  grd.addColorStop(1, '#bfe8ff');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  // Sun
+  ctx.fillStyle = '#ffe066';
+  ctx.beginPath(); ctx.arc(W - 60, 60, 30, 0, Math.PI * 2); ctx.fill();
+
+  // Clouds
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  drawCloud(90, 90);
+  drawCloud(260, 150);
+}
+
+function drawCloud(cx, cy) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+  ctx.arc(cx + 18, cy - 8, 20, 0, Math.PI * 2);
+  ctx.arc(cx + 38, cy, 16, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawPlatforms() {
+  for (const plat of platforms) {
+    const isRoof = plat.y >= H - 20;
+    ctx.fillStyle = isRoof ? '#8a6d3b' : '#7cbf5c';
+    ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+    ctx.fillStyle = isRoof ? '#a9895a' : '#9adf78';
+    ctx.fillRect(plat.x, plat.y, plat.w, 5);
+  }
+}
+
+function drawPlatformHUD() {
+  ctx.fillStyle = '#2a2a2a';
+  ctx.font = 'bold 16px monospace';
+  ctx.fillText(`SCORE  ${score}`, 12, 24);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = '#3a3a3a';
+  ctx.fillText('OUT OF THE MACHINE!', 12, 44);
+}
+
 // ─── Input ────────────────────────────────────────────────────────────────────
 
 const keys = {};
@@ -802,12 +896,48 @@ function loop(ts) {
     drawPlayer(player);
     drawHUD();
 
-    // Collision (claw fingers, or riding a claw into the box's ceiling) →
-    // start fade
-    if (checkCollision() || touchesCeiling()) {
+    // Claw fingers are fatal → start fade to game over. Riding a retracting
+    // claw all the way up to the ceiling instead pops the bunny out of the
+    // top of the machine into the platform level.
+    if (checkCollision()) {
       state = STATE.FADING;
       // Freeze player
+    } else if (touchesCeiling()) {
+      state = STATE.POPOUT;
+      popoutStartY = player.y;
+      popoutElapsed = 0;
     }
+
+  } else if (state === STATE.POPOUT) {
+    // Scene stays visible underneath the pop-out flash while the player
+    // launches further upward and out of frame.
+    drawObstacles();
+    for (let c of claws) drawClaw(c);
+
+    popoutElapsed = Math.min(popoutElapsed + dt, POPOUT_DURATION);
+    const progress = popoutElapsed / POPOUT_DURATION;
+    player.y = popoutStartY - progress * POPOUT_RISE;
+
+    drawPlayer(player);
+    drawHUD();
+
+    // Bright flash (contrasted with the fade-to-black on death) sells the
+    // "pop" of bursting out through the top of the machine.
+    ctx.fillStyle = `rgba(255,255,255,${progress * 0.9})`;
+    ctx.fillRect(0, 0, W, H);
+
+    if (progress >= 1) {
+      initPlatformLevel();
+      state = STATE.PLATFORM;
+    }
+
+  } else if (state === STATE.PLATFORM) {
+    updatePlatformLevel(dt);
+
+    drawPlatformBackground();
+    drawPlatforms();
+    drawPlayer(player);
+    drawPlatformHUD();
 
   } else if (state === STATE.FADING) {
     // Scene stays visible underneath fade
