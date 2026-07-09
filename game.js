@@ -562,26 +562,15 @@ function clawHitsObstacle(c) {
   return false;
 }
 
-// Only the two jaw/finger tips are harmful — the arm and body block ("the
-// top of the claw") are safe to touch and are handled as a standable
-// platform instead (see resolveClawBodies below). Each finger tip is tested
-// as a small circle at its exact drawn position, not a loose box around the
-// whole jaw level, so bumping the underside of the body no longer counts as
-// a hit.
+// Only the two jaw/finger tips are ever grabby — the arm and body block
+// ("the top of the claw") are safe to touch and are handled as a standable
+// platform instead (see resolveClawBodies below). Merely brushing a finger
+// tip is harmless on its own; it's shared here (FINGER_HIT_R) purely as the
+// hit-radius used by the hover claw's swoop-catch check below — the box
+// claw itself no longer has any touch-based instant-death check, since
+// death now only comes from being grabbed and hauled all the way up
+// without a drop (see the grab/retract logic in updateClaws).
 const FINGER_HIT_R = 8; // matches the drawn 4px tip plus a small margin
-
-function checkCollision() {
-  for (let c of claws) {
-    const tipY = clawTipY(c);
-    for (const tipX of [clawTipLeft(c), clawTipRight(c)]) {
-      const dx = player.x - tipX;
-      const dy = player.y - tipY;
-      const rr = player.r + FINGER_HIT_R;
-      if (dx * dx + dy * dy < rr * rr) return true;
-    }
-  }
-  return false;
-}
 
 // The box's open top (y = 0) — the only way to ever reach it is by riding a
 // retracting claw all the way up, since normal jumping can't get anywhere
@@ -784,8 +773,8 @@ function drawHoverClaw(c) {
   ctx.beginPath(); ctx.arc(clawTipRight(c), tipY, 4, 0, Math.PI * 2); ctx.fill();
 }
 
-// Same finger-tip-only hit test as the box claw's checkCollision — only the
-// jaw tips are harmful, so a near-miss on the body doesn't count.
+// Same finger-tip-only hit test used for the box claw's finger tips — only
+// the jaw tips are harmful, so a near-miss on the body doesn't count.
 function checkHoverClawCollision(c) {
   const tipY = clawTipY(c);
   for (const tipX of [clawTipLeft(c), clawTipRight(c)]) {
@@ -1163,18 +1152,18 @@ function loop(ts) {
     drawPlayer(player);
     drawHUD();
 
-    // Claw fingers are fatal → start fade to game over. Riding a retracting
-    // claw all the way up to the ceiling instead pops the bunny out of the
-    // top of the machine into the platform level. Skipped while a claw just
-    // grabbed the bunny this same frame (updateClaws may have already set
-    // state = FADING itself once that grab's retract completes) — the
-    // finger-proximity and ceiling checks would otherwise misfire the instant
-    // she's pulled into the jaws / hauled up near the top.
+    // Merely touching the claw's fingers is no longer fatal on its own — the
+    // bunny only dies if she's actually grabbed (see playerGrabAligned in
+    // updateClaws) and the claw hauls her all the way up to a full retract
+    // without rolling a drop (state = FADING is set there once that
+    // carry-to-the-top completes). Riding a retracting claw all the way up
+    // to the ceiling instead pops the bunny out of the top of the machine
+    // into the platform level. Skipped while a claw just grabbed the bunny
+    // this same frame (updateClaws may have already set state = FADING
+    // itself once that grab's retract completes) — the ceiling check would
+    // otherwise misfire the instant she's hauled up near the top.
     const grabbedNow = claws.some(c => c.grabbing && c.grabbedIsPlayer);
-    if (!grabbedNow && checkCollision()) {
-      state = STATE.FADING;
-      // Freeze player
-    } else if (!grabbedNow && touchesCeiling()) {
+    if (!grabbedNow && touchesCeiling()) {
       state = STATE.POPOUT;
       popoutStartY = player.y;
       popoutElapsed = 0;
