@@ -465,14 +465,16 @@ function findGrabTarget(c) {
   return null;
 }
 
-// True if the claw's jaw span fully encloses the bunny horizontally — the
-// mirror of findGrabTarget's check for a wide obstacle: there, the jaw span
-// must sit inside the item's bounds; here, since the bunny is narrower than
-// the jaws, her bounds must sit inside the jaw span instead, i.e. the claw
-// is squarely, fully lined up over her.
+// True if the claw's jaw span overlaps at least 30% of the bunny's
+// horizontal width — a partial-overlap "in bounds" rule rather than the
+// full-containment check findGrabTarget uses for wide obstacles: the claw
+// no longer needs to be squarely, fully lined up over her, just clipping
+// enough of her to plausibly grab hold.
 function playerGrabAligned(c) {
   const left = clawTipLeft(c), right = clawTipRight(c);
-  return left <= player.x - player.r && right >= player.x + player.r;
+  const playerLeft = player.x - player.r, playerRight = player.x + player.r;
+  const overlap = Math.min(right, playerRight) - Math.max(left, playerLeft);
+  return overlap >= (playerRight - playerLeft) * 0.3;
 }
 
 // ─── Collision ────────────────────────────────────────────────────────────────
