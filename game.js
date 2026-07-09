@@ -365,10 +365,19 @@ function spawnClaw() {
 }
 
 const CLAW_SPAWN_Y = -40;
-// Once a claw has descended 2/3 of the way from its spawn point to the box
+// Once a claw has descended most of the way from its spawn point to the box
 // floor, it locks onto a straight-down drop: horizontal pursuit stops so the
-// final third of the descent is a plain vertical strike.
-const CLAW_LOCK_Y = CLAW_SPAWN_Y + (H - CLAW_SPAWN_Y) * (2 / 3);
+// final stretch of the descent is a plain vertical strike. This used to lock
+// at 2/3 depth, but combined with the claw's intentionally slow horizontal
+// homing speed (HOMING_BASE/GROWTH, tuned low elsewhere for fairness), that
+// left a full third of the descent — well over a second — for the bunny to
+// drift out of alignment after tracking stopped, so a catch essentially
+// never landed even against a bunny that wasn't actively dodging. Locking
+// much closer to the floor keeps homing pursuit active for nearly the whole
+// fall, so the claw's final x actually reflects where the bunny recently
+// was, while still preserving a short, readable straight-down strike at the
+// very end.
+const CLAW_LOCK_Y = CLAW_SPAWN_Y + (H - CLAW_SPAWN_Y) * 0.85;
 
 function updateClaws(dt) {
   const t = secondsElapsed();
@@ -519,14 +528,23 @@ function updateClaws(dt) {
   claws = claws.filter(c => c.retracting ? (c.retractElapsed < c.retractDuration || c.grabbing) : c.y < H + 60);
 }
 
-// True if the claw's jaw span (between its two tips) sits fully inside a
-// grabbable obstacle's x bounds — i.e. it's squarely lined up over the item,
-// not just brushing an edge of it.
+// True if the claw's jaw span (between its two tips) substantially overlaps
+// a grabbable obstacle's x bounds — i.e. it's squarely lined up over the
+// item, not just brushing an edge of it. This used to require the jaw span
+// to sit *fully* inside the item's bounds, but the jaw span (up to 44px
+// wide, oscillating) is wider than or comparable to most grabbable objects
+// (32-34px), so that full-containment rule was geometrically almost never
+// satisfiable — the claw could look perfectly centered over a crate or ball
+// and still never register a grab. Requiring most (not all) of the smaller
+// of the two widths to overlap keeps the "squarely lined up" spirit while
+// actually being achievable.
 function findGrabTarget(c) {
   const left = clawTipLeft(c), right = clawTipRight(c);
+  const jawSpan = right - left;
   for (const ob of obstacles) {
     if (!GRABBABLE_KINDS.includes(ob.kind)) continue;
-    if (left >= ob.x && right <= ob.x + ob.w) return ob;
+    const overlap = Math.min(right, ob.x + ob.w) - Math.max(left, ob.x);
+    if (overlap >= Math.min(jawSpan, ob.w) * 0.6) return ob;
   }
   return null;
 }
