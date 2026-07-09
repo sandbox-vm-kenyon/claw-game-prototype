@@ -331,14 +331,18 @@ const FALL_MAX = 7;          // cap on descent speed
 const RETRACT_SPEED = 3.5;   // reference speed used to size the eased retract's duration (px/frame)
                               // lower value = longer duration = slower upward retract overall
 
+const BOTTOM_DWELL_DURATION = 60; // ~1 second (dt is expressed in ~1-per-frame units at 60fps) the
+                                   // claw pauses at the bottom, jaws already closed, before it
+                                   // begins climbing back up
+
 const CLAW_CLOSED_JAW = 2; // jawOpen value the claw snaps to the instant it hits bottom (floor or
                             // obstacle) — the jaws close together whether or not anything was
                             // actually caught, same as a real claw machine's grab-and-release cycle.
 
-// Ease-out cubic: fast at the start, smoothly decelerating toward the end —
-// used so the claw's upward retract slows into its finish instead of moving
-// at one constant speed the whole way up.
-function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+// Ease-out quad: still decelerates toward the end like the cubic curve this
+// replaced, but starts its initial rise a little more slowly (lower initial
+// velocity) instead of climbing at full speed the instant the retract begins.
+function easeOutQuad(t) { return 1 - Math.pow(1 - t, 2); }
 
 function secondsElapsed() {
   return (performance.now() - runStartTime) / 1000;
@@ -359,6 +363,8 @@ function spawnClaw() {
     willDrop: false, // whether this claw's grab (once it happens) will let go mid-retract
     dropY: null,     // the y height (rolled at grab time) to release its catch at, if willDrop
     retracting: false,
+    dwelling: false, // paused at the bottom, jaws closed, for BOTTOM_DWELL_DURATION before retracting
+    dwellElapsed: 0,
     stoodOn: false, // whether the player is currently standing on its body
     color: '#e44',
   });
@@ -378,7 +384,7 @@ function updateClaws(dt) {
   for (let c of claws) {
     const prevY = c.y; // used below to carry a rider standing on the claw's body
 
-    if (!c.retracting) {
+    if (!c.retracting && !c.dwelling) {
       // AI pursuit: steer horizontally toward the bunny's current position —
       // but only until the claw reaches the 2/3-down lock point, after which
       // it commits to a straight-down descent with no more side-to-side motion.
@@ -394,16 +400,19 @@ function updateClaws(dt) {
       c.y += c.vy * dt;
 
       // Reached the bottom of the box, or clipped a non-player obstacle
-      // (turtle, crate, ball, bear) on the way down — either way, snap into
-      // a quick retract back up instead of continuing to descend/vanish.
+      // (turtle, crate, ball, bear) on the way down — either way, come to a
+      // stop and dwell there briefly (see BOTTOM_DWELL_DURATION below)
+      // before starting the retract back up, instead of continuing to
+      // descend/vanish or reversing direction instantly.
       if (clawTipY(c) >= FLOOR_Y || clawHitsObstacle(c)) {
-        c.retracting = true;
+        c.dwelling = true;
+        c.dwellElapsed = 0;
         c.retractFromY = c.y;
-        c.retractElapsed = 0;
         // Size the ease's total duration off the old constant retract speed,
         // so a claw that starts retracting further down still takes
         // proportionally longer, same as before — only the speed *curve*
-        // along the way changes from constant to eased.
+        // along the way changes from constant to eased. Computed now since
+        // c.y stays put for the rest of the dwell.
         c.retractDuration = Math.max(0.15, (c.retractFromY - CLAW_SPAWN_Y) / RETRACT_SPEED);
 
         // Right as it comes to a stop, check whether it's fully lined up (in
@@ -441,11 +450,21 @@ function updateClaws(dt) {
         // closes on nothing, same as a real claw machine's cycle.
         c.jawOpen = CLAW_CLOSED_JAW;
       }
+    } else if (c.dwelling) {
+      // Sit still at the bottom, jaws already closed, for one beat before
+      // the retract begins.
+      c.dwellElapsed += dt;
+      if (c.dwellElapsed >= BOTTOM_DWELL_DURATION) {
+        c.dwelling = false;
+        c.retracting = true;
+        c.retractElapsed = 0;
+      }
     } else {
-      // Ease-out retract: climbs quickly at first, then smoothly slows as it
-      // nears the top of its travel, instead of moving at one fixed speed.
+      // Ease-out retract: starts its climb a little more slowly, then
+      // smoothly slows again as it nears the top of its travel, instead of
+      // moving at one fixed speed the whole way up.
       c.retractElapsed = Math.min(c.retractElapsed + dt, c.retractDuration);
-      const progress = easeOutCubic(c.retractElapsed / c.retractDuration);
+      const progress = easeOutQuad(c.retractElapsed / c.retractDuration);
       c.y = c.retractFromY + (CLAW_SPAWN_Y - c.retractFromY) * progress;
 
       // If this catch was rolled to be a drop, let go the moment the claw
@@ -501,9 +520,10 @@ function updateClaws(dt) {
     // isn't fought against by gravity as it climbs away underneath them.
     if (c.stoodOn) player.y += c.y - prevY;
 
-    // Pulsing jaw while still descending — once it's retracting the jaws stay
-    // closed (see CLAW_CLOSED_JAW above) instead of resuming the open pulse.
-    if (!c.retracting) c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6;
+    // Pulsing jaw while still descending — once it's dwelling at the bottom
+    // or retracting the jaws stay closed (see CLAW_CLOSED_JAW above) instead
+    // of resuming the open pulse.
+    if (!c.retracting && !c.dwelling) c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6;
   }
   // Remove claws once they've either left the screen while falling, or have
   // fully retracted back up past the spawn point. The retract completion is
