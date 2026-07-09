@@ -9,10 +9,16 @@ const H = canvas.height;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4, PLATFORM_FADING: 5 };
+const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4, PLATFORM_FADING: 5, GRAB_FADE_OUT: 6, GRAB_FADE_IN: 7 };
 
 let state, player, claws, obstacles, score, fadeAlpha, fadeSpeed, gameOverAlpha;
 let runStartTime;
+
+// Grab-and-carry: when the claw comes to a stop fully aligned (in x) over a
+// crate/turtle/ball, it grabs that item and hauls it up with the retract.
+// Once fully retracted, play briefly pauses for a fade-to-black-and-back —
+// on the way back in, the item is gone for good.
+let grabFadeAlpha, grabFadeClaw;
 
 // Pop-out transition (riding a retracting claw all the way to the box's
 // ceiling no longer kills the player — it launches them up and out of the
@@ -34,6 +40,9 @@ function init() {
   fadeSpeed = 0.018;
   score = 0;
   runStartTime = performance.now();
+
+  grabFadeAlpha = 0;
+  grabFadeClaw = null;
 
   if (btnPlayAgain) btnPlayAgain.classList.remove('visible');
 
@@ -60,6 +69,10 @@ function init() {
 // the side (blocked → jump over) or lands from above (supported → jump on).
 
 const FLOOR_Y = H - 6; // resting line for items sitting in the bottom of the box
+
+// Which obstacle kinds the claw can grab and carry off. The bear is left out
+// on purpose — only the crate, turtle and ball are up for grabs.
+const GRABBABLE_KINDS = ['turtle', 'block', 'ball'];
 
 // Beach-ball rolling tuning — the ball is the only obstacle that reacts to
 // contact by rolling instead of just blocking/supporting the player.
@@ -311,6 +324,7 @@ function spawnClaw() {
     armLen: 30,
     jawOpen: 18,
     grabbing: false,
+    grabbedObstacle: null,
     retracting: false,
     stoodOn: false, // whether the player is currently standing on its body
     color: '#e44',
@@ -358,6 +372,16 @@ function updateClaws(dt) {
         // proportionally longer, same as before — only the speed *curve*
         // along the way changes from constant to eased.
         c.retractDuration = Math.max(0.15, (c.retractFromY - CLAW_SPAWN_Y) / RETRACT_SPEED);
+
+        // Right as it comes to a stop, check whether it's fully lined up (in
+        // x) over a grabbable item — if so, it grabs on and hauls it up with
+        // the retract instead of coming up empty.
+        const target = findGrabTarget(c);
+        if (target) {
+          c.grabbing = true;
+          c.grabbedObstacle = target;
+          obstacles = obstacles.filter(ob => ob !== target);
+        }
       }
     } else {
       // Ease-out retract: climbs quickly at first, then smoothly slows as it
@@ -365,6 +389,22 @@ function updateClaws(dt) {
       c.retractElapsed = Math.min(c.retractElapsed + dt, c.retractDuration);
       const progress = easeOutCubic(c.retractElapsed / c.retractDuration);
       c.y = c.retractFromY + (CLAW_SPAWN_Y - c.retractFromY) * progress;
+
+      // Haul the grabbed item up along with the claw, held right at the jaws.
+      if (c.grabbing && c.grabbedObstacle) {
+        const item = c.grabbedObstacle;
+        item.x = c.x - item.w / 2;
+        item.y = clawTipY(c) - item.h;
+      }
+
+      // Fully retracted with something in its grip — pause play for a quick
+      // fade to black on the catch, then fade back in showing just the empty
+      // claw (the item doesn't come back).
+      if (c.grabbing && c.retractElapsed >= c.retractDuration) {
+        state = STATE.GRAB_FADE_OUT;
+        grabFadeAlpha = 0;
+        grabFadeClaw = c;
+      }
     }
 
     // If the player is currently standing on this claw's body, carry them
@@ -384,8 +424,23 @@ function updateClaws(dt) {
   // the eased position calculation can leave c.y a hair above CLAW_SPAWN_Y
   // due to floating-point rounding even once progress reaches 1, which let
   // a fully-retracted claw sit stuck forever and silently blocked all future
-  // spawns (since spawnClaw() only fires once claws.length reaches 0).
-  claws = claws.filter(c => c.retracting ? c.retractElapsed < c.retractDuration : c.y < H + 60);
+  // spawns (since spawnClaw() only fires once claws.length reaches 0). A
+  // claw that just finished retracting with something in its grip is kept
+  // around a little longer — it's removed once the grab fade sequence lets
+  // go of it (see GRAB_FADE_IN in the main loop) rather than vanishing here.
+  claws = claws.filter(c => c.retracting ? (c.retractElapsed < c.retractDuration || c.grabbing) : c.y < H + 60);
+}
+
+// True if the claw's jaw span (between its two tips) sits fully inside a
+// grabbable obstacle's x bounds — i.e. it's squarely lined up over the item,
+// not just brushing an edge of it.
+function findGrabTarget(c) {
+  const left = clawTipLeft(c), right = clawTipRight(c);
+  for (const ob of obstacles) {
+    if (!GRABBABLE_KINDS.includes(ob.kind)) continue;
+    if (left >= ob.x && right <= ob.x + ob.w) return ob;
+  }
+  return null;
 }
 
 // ─── Collision ────────────────────────────────────────────────────────────────
@@ -916,6 +971,17 @@ function drawClaw(c) {
   ctx.beginPath(); ctx.arc(clawTipRight(c), tipY, 4, 0, Math.PI * 2); ctx.fill();
 }
 
+// Draws every active claw, plus whatever item it's currently grabbed onto
+// (drawn first so the claw's jaws read as gripping it, not floating beside
+// it) — used anywhere claws are drawn so a carried item is never dropped
+// from the scene mid-retract.
+function drawClaws() {
+  for (const c of claws) {
+    if (c.grabbing && c.grabbedObstacle) drawObstacle(c.grabbedObstacle);
+    drawClaw(c);
+  }
+}
+
 function drawHUD() {
   ctx.fillStyle = '#4af';
   ctx.font = 'bold 16px monospace';
@@ -996,7 +1062,7 @@ function loop(ts) {
 
     // Draw scene
     drawObstacles();
-    for (let c of claws) drawClaw(c);
+    drawClaws();
     drawPlayer(player);
     drawHUD();
 
@@ -1012,11 +1078,51 @@ function loop(ts) {
       popoutElapsed = 0;
     }
 
+  } else if (state === STATE.GRAB_FADE_OUT) {
+    // Scene stays visible underneath the fade — the claw and its catch sink
+    // into black together.
+    drawObstacles();
+    drawClaws();
+    drawPlayer(player);
+    drawHUD();
+
+    grabFadeAlpha = Math.min(1, grabFadeAlpha + fadeSpeed);
+    ctx.fillStyle = `rgba(0,0,0,${grabFadeAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+
+    if (grabFadeAlpha >= 1) {
+      // The item is gone for good — let go of it so only the empty claw
+      // fades back in.
+      grabFadeClaw.grabbing = false;
+      grabFadeClaw.grabbedObstacle = null;
+      state = STATE.GRAB_FADE_IN;
+    }
+
+  } else if (state === STATE.GRAB_FADE_IN) {
+    // Fade back in on the same scene, minus the item the claw just made off
+    // with.
+    drawObstacles();
+    drawClaws();
+    drawPlayer(player);
+    drawHUD();
+
+    grabFadeAlpha = Math.max(0, grabFadeAlpha - fadeSpeed);
+    ctx.fillStyle = `rgba(0,0,0,${grabFadeAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+
+    if (grabFadeAlpha <= 0) {
+      // The claw's done its job — let it finish leaving the scene like any
+      // other fully-retracted claw, and resume normal play.
+      claws = claws.filter(c => c !== grabFadeClaw);
+      grabFadeClaw = null;
+      state = STATE.PLAYING;
+    }
+
   } else if (state === STATE.POPOUT) {
     // Scene stays visible underneath the pop-out flash while the player
     // launches further upward and out of frame.
     drawObstacles();
-    for (let c of claws) drawClaw(c);
+    drawClaws();
 
     popoutElapsed = Math.min(popoutElapsed + dt, POPOUT_DURATION);
     const progress = popoutElapsed / POPOUT_DURATION;
@@ -1068,7 +1174,7 @@ function loop(ts) {
   } else if (state === STATE.FADING) {
     // Scene stays visible underneath fade
     drawObstacles();
-    for (let c of claws) drawClaw(c);
+    drawClaws();
     drawPlayer(player);
     drawHUD();
 
