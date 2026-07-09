@@ -331,6 +331,10 @@ const FALL_MAX = 7;          // cap on descent speed
 const RETRACT_SPEED = 3.5;   // reference speed used to size the eased retract's duration (px/frame)
                               // lower value = longer duration = slower upward retract overall
 
+const CLAW_CLOSED_JAW = 2; // jawOpen value the claw snaps to the instant it hits bottom (floor or
+                            // obstacle) — the jaws close together whether or not anything was
+                            // actually caught, same as a real claw machine's grab-and-release cycle.
+
 // Ease-out cubic: fast at the start, smoothly decelerating toward the end —
 // used so the claw's upward retract slows into its finish instead of moving
 // at one constant speed the whole way up.
@@ -431,6 +435,11 @@ function updateClaws(dt) {
             ? CLAW_SPAWN_Y + Math.random() * (c.retractFromY - CLAW_SPAWN_Y)
             : null;
         }
+
+        // Snap the jaws shut now that the grab has (or hasn't) been decided —
+        // this happens regardless of the outcome, so an empty grab still
+        // closes on nothing, same as a real claw machine's cycle.
+        c.jawOpen = CLAW_CLOSED_JAW;
       }
     } else {
       // Ease-out retract: climbs quickly at first, then smoothly slows as it
@@ -492,8 +501,9 @@ function updateClaws(dt) {
     // isn't fought against by gravity as it climbs away underneath them.
     if (c.stoodOn) player.y += c.y - prevY;
 
-    // Pulsing jaw
-    c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6;
+    // Pulsing jaw while still descending — once it's retracting the jaws stay
+    // closed (see CLAW_CLOSED_JAW above) instead of resuming the open pulse.
+    if (!c.retracting) c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6;
   }
   // Remove claws once they've either left the screen while falling, or have
   // fully retracted back up past the spawn point. The retract completion is
