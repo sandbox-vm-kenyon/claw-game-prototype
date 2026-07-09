@@ -325,6 +325,7 @@ function spawnClaw() {
     jawOpen: 18,
     grabbing: false,
     grabbedObstacle: null,
+    grabbedIsPlayer: false,
     retracting: false,
     stoodOn: false, // whether the player is currently standing on its body
     color: '#e44',
@@ -374,13 +375,23 @@ function updateClaws(dt) {
         c.retractDuration = Math.max(0.15, (c.retractFromY - CLAW_SPAWN_Y) / RETRACT_SPEED);
 
         // Right as it comes to a stop, check whether it's fully lined up (in
-        // x) over a grabbable item — if so, it grabs on and hauls it up with
-        // the retract instead of coming up empty.
-        const target = findGrabTarget(c);
-        if (target) {
+        // x) over the bunny herself — same "fully aligned" idea as grabbing
+        // a wide obstacle, mirrored since the bunny is narrower than the
+        // jaws (her bounds must sit inside the jaw span, rather than the
+        // jaw span sitting inside the item's bounds). Catching the bunny
+        // takes priority over grabbing whatever object she happens to be
+        // standing on/near.
+        if (playerGrabAligned(c)) {
           c.grabbing = true;
-          c.grabbedObstacle = target;
-          obstacles = obstacles.filter(ob => ob !== target);
+          c.grabbedIsPlayer = true;
+          c.stoodOn = false; // now held by the jaws, not standing on the body
+        } else {
+          const target = findGrabTarget(c);
+          if (target) {
+            c.grabbing = true;
+            c.grabbedObstacle = target;
+            obstacles = obstacles.filter(ob => ob !== target);
+          }
         }
       }
     } else {
@@ -390,20 +401,31 @@ function updateClaws(dt) {
       const progress = easeOutCubic(c.retractElapsed / c.retractDuration);
       c.y = c.retractFromY + (CLAW_SPAWN_Y - c.retractFromY) * progress;
 
-      // Haul the grabbed item up along with the claw, held right at the jaws.
-      if (c.grabbing && c.grabbedObstacle) {
+      // Haul whatever's grabbed up along with the claw, held right at the
+      // jaws — the bunny herself if she's the one caught, otherwise the
+      // grabbed obstacle.
+      if (c.grabbing && c.grabbedIsPlayer) {
+        player.x = c.x;
+        player.y = clawTipY(c) - player.r;
+      } else if (c.grabbing && c.grabbedObstacle) {
         const item = c.grabbedObstacle;
         item.x = c.x - item.w / 2;
         item.y = clawTipY(c) - item.h;
       }
 
-      // Fully retracted with something in its grip — pause play for a quick
-      // fade to black on the catch, then fade back in showing just the empty
-      // claw (the item doesn't come back).
+      // Fully retracted with something in its grip. Catching the bunny ends
+      // the run — the same fade-to-black-and-game-over used for a fatal
+      // finger touch — rather than the fade-to-black-and-back used when it's
+      // just an obstacle, since there's no "resuming play" once she's the
+      // one that's been hauled off.
       if (c.grabbing && c.retractElapsed >= c.retractDuration) {
-        state = STATE.GRAB_FADE_OUT;
-        grabFadeAlpha = 0;
-        grabFadeClaw = c;
+        if (c.grabbedIsPlayer) {
+          state = STATE.FADING;
+        } else if (c.grabbedObstacle) {
+          state = STATE.GRAB_FADE_OUT;
+          grabFadeAlpha = 0;
+          grabFadeClaw = c;
+        }
       }
     }
 
@@ -441,6 +463,16 @@ function findGrabTarget(c) {
     if (left >= ob.x && right <= ob.x + ob.w) return ob;
   }
   return null;
+}
+
+// True if the claw's jaw span fully encloses the bunny horizontally — the
+// mirror of findGrabTarget's check for a wide obstacle: there, the jaw span
+// must sit inside the item's bounds; here, since the bunny is narrower than
+// the jaws, her bounds must sit inside the jaw span instead, i.e. the claw
+// is squarely, fully lined up over her.
+function playerGrabAligned(c) {
+  const left = clawTipLeft(c), right = clawTipRight(c);
+  return left <= player.x - player.r && right >= player.x + player.r;
 }
 
 // ─── Collision ────────────────────────────────────────────────────────────────
@@ -1040,10 +1072,17 @@ function loop(ts) {
   drawBackground();
 
   if (state === STATE.PLAYING) {
-    handleInput();
-    updatePlayerPhysics();
-    resolveObstacles();
-    resolveClawBodies();
+    // While a claw is actively hauling the bunny up in its jaws, she's fully
+    // caught — freeze her own movement/physics (same idea as freezing the
+    // player during FADING) so the claw's retract is the only thing moving
+    // her, instead of gravity/input fighting the carry each frame.
+    const grabbedBefore = claws.some(c => c.grabbing && c.grabbedIsPlayer);
+    if (!grabbedBefore) {
+      handleInput();
+      updatePlayerPhysics();
+      resolveObstacles();
+      resolveClawBodies();
+    }
     updateObstacles(dt);
     updateClaws(dt);
 
@@ -1068,11 +1107,16 @@ function loop(ts) {
 
     // Claw fingers are fatal → start fade to game over. Riding a retracting
     // claw all the way up to the ceiling instead pops the bunny out of the
-    // top of the machine into the platform level.
-    if (checkCollision()) {
+    // top of the machine into the platform level. Skipped while a claw just
+    // grabbed the bunny this same frame (updateClaws may have already set
+    // state = FADING itself once that grab's retract completes) — the
+    // finger-proximity and ceiling checks would otherwise misfire the instant
+    // she's pulled into the jaws / hauled up near the top.
+    const grabbedNow = claws.some(c => c.grabbing && c.grabbedIsPlayer);
+    if (!grabbedNow && checkCollision()) {
       state = STATE.FADING;
       // Freeze player
-    } else if (touchesCeiling()) {
+    } else if (!grabbedNow && touchesCeiling()) {
       state = STATE.POPOUT;
       popoutStartY = player.y;
       popoutElapsed = 0;
