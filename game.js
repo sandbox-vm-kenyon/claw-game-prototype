@@ -18,7 +18,15 @@ let runStartTime;
 // crate/turtle/ball, it grabs that item and hauls it up with the retract.
 // Once fully retracted, play briefly pauses for a fade-to-black-and-back —
 // on the way back in, the item is gone for good.
+//
+// Every grab is a gamble, though: the instant something is caught, there's
+// only a 50% chance the claw actually keeps its grip all the way up. If it
+// doesn't, a drop height is rolled right then (somewhere between the grab
+// point and a full retract) and the catch is let go the moment the claw
+// climbs up to that height — the item/bunny falls back rather than being
+// hauled off.
 let grabFadeAlpha, grabFadeClaw;
+const DROP_CHANCE = 0.5; // odds a grab is let go mid-retract instead of held all the way up
 
 // Pop-out transition (riding a retracting claw all the way to the box's
 // ceiling no longer kills the player — it launches them up and out of the
@@ -116,6 +124,7 @@ function initObstacles() {
     stoodOn: false, // whether the player is standing on it this frame (turtle only)
     touching: false,    // whether the player is touching it this frame (beach ball only)
     wasTouching: false, // touching state from the previous frame, used to detect a fresh impact (beach ball only)
+    falling: false, // set true if the claw grabs then drops this item mid-retract, until it lands again
   }));
 }
 
@@ -228,6 +237,23 @@ function resolveBallObstacleCollisions(ball) {
 // each bounce, until it settles back at rest.
 function updateObstacles(dt) {
   for (const ob of obstacles) {
+    // A non-ball item the claw grabbed and then dropped mid-retract (see
+    // updateClaws) has no other floor-seeking physics of its own (unlike the
+    // ball, which already falls under its own gravity whenever airborne) —
+    // let it drop straight down under gravity until it lands back at its
+    // usual resting line, then leave it be like any other static obstacle.
+    if (ob.falling) {
+      ob.vy += BALL_GRAVITY * dt;
+      ob.y += ob.vy * dt;
+      const groundY = FLOOR_Y - ob.h;
+      if (ob.y >= groundY) {
+        ob.y = groundY;
+        ob.vy = 0;
+        ob.falling = false;
+      }
+      continue;
+    }
+
     if (ob.kind === 'ball') {
       if (ob.vx !== 0) {
         ob.x += ob.vx * dt;
@@ -326,6 +352,8 @@ function spawnClaw() {
     grabbing: false,
     grabbedObstacle: null,
     grabbedIsPlayer: false,
+    willDrop: false, // whether this claw's grab (once it happens) will let go mid-retract
+    dropY: null,     // the y height (rolled at grab time) to release its catch at, if willDrop
     retracting: false,
     stoodOn: false, // whether the player is currently standing on its body
     color: '#e44',
@@ -393,6 +421,16 @@ function updateClaws(dt) {
             obstacles = obstacles.filter(ob => ob !== target);
           }
         }
+
+        // Every catch is a coin flip: roll it the instant the grab happens,
+        // and if it's a drop, pick the height it'll be let go at right now
+        // too — somewhere between this grab point and a full retract.
+        if (c.grabbing) {
+          c.willDrop = Math.random() < DROP_CHANCE;
+          c.dropY = c.willDrop
+            ? CLAW_SPAWN_Y + Math.random() * (c.retractFromY - CLAW_SPAWN_Y)
+            : null;
+        }
       }
     } else {
       // Ease-out retract: climbs quickly at first, then smoothly slows as it
@@ -400,6 +438,24 @@ function updateClaws(dt) {
       c.retractElapsed = Math.min(c.retractElapsed + dt, c.retractDuration);
       const progress = easeOutCubic(c.retractElapsed / c.retractDuration);
       c.y = c.retractFromY + (CLAW_SPAWN_Y - c.retractFromY) * progress;
+
+      // If this catch was rolled to be a drop, let go the moment the claw
+      // climbs up to the height picked at grab time, rather than hauling it
+      // all the way up. The bunny simply resumes falling under her own
+      // physics (see the `grabbedBefore` check in loop()); a dropped
+      // obstacle is handed back to updateObstacles() to fall to the floor.
+      if (c.grabbing && c.willDrop && c.y <= c.dropY) {
+        if (c.grabbedObstacle) {
+          const item = c.grabbedObstacle;
+          if (item.kind !== 'ball') item.falling = true; // ball already falls under its own gravity once airborne
+          item.vy = 0;
+          obstacles.push(item);
+        }
+        c.grabbing = false;
+        c.grabbedIsPlayer = false;
+        c.grabbedObstacle = null;
+        c.willDrop = false;
+      }
 
       // Haul whatever's grabbed up along with the claw, held right at the
       // jaws — the bunny herself if she's the one caught, otherwise the
