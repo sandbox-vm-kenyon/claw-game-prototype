@@ -651,27 +651,40 @@ function resolveClawBodies() {
 // just supports landing on top / blocks from the side, exactly like the box
 // obstacles do.
 
+// The level extends rightward across several screens' worth of width — the
+// camera scrolls to follow the bunny (see cameraX below) instead of the
+// whole stage fitting in one static screen like the box level does.
+const LEVEL_WIDTH = 3000;   // ~6.25x the canvas width
+const CAMERA_FOLLOW_X = W / 2; // once scrolling starts, keep the bunny roughly centered
+
 let platforms;
+let cameraX;
 
 function initPlatformLevel() {
-  // Non-overlapping x-ranges (0-80, 100-180, 200-280, 300-380, 400-480) so
-  // no two platforms ever share airspace above/below each other — with the
-  // low, jump-reachable heights below, overlapping columns would otherwise
-  // sandwich the player between platforms with no room to land.
+  // Repeats the same jump-reachable 5-platform "hop" pattern (tuned by an
+  // earlier task so every gap is clearable) every 500px across the whole
+  // level, so the stage keeps offering new ground the further right the
+  // bunny walks. Non-overlapping x-ranges within each cycle (0-80, 100-180,
+  // 200-280, 300-380, 400-480) mean no two platforms in a cycle ever share
+  // airspace above/below each other.
   platforms = [
-    { x: 0,   y: H - 20, w: W,  h: 20 },  // the machine's rooftop (safety-net ground)
-    { x: 0,   y: H - 84, w: 80, h: 16 },
-    { x: 400, y: H - 88, w: 80, h: 16 },
-    { x: 200, y: H - 92, w: 80, h: 16 },
-    { x: 100, y: H - 96, w: 80, h: 16 },
-    { x: 300, y: H - 90, w: 80, h: 16 },
+    { x: 0, y: H - 20, w: LEVEL_WIDTH, h: 20 },  // the machine's rooftop (safety-net ground), spans the whole level
   ];
+  const cycleHeights = [H - 84, H - 96, H - 92, H - 90, H - 88]; // x offsets 0,100,200,300,400 within a cycle
+  const CYCLE_WIDTH = 500;
+  for (let cycleStart = 0; cycleStart < LEVEL_WIDTH; cycleStart += CYCLE_WIDTH) {
+    cycleHeights.forEach((y, i) => {
+      const x = cycleStart + i * 100;
+      if (x + 80 <= LEVEL_WIDTH) platforms.push({ x, y, w: 80, h: 16 });
+    });
+  }
 
   player.x = W / 2;
   player.y = H - 20 - player.r;
   player.vx = 0;
   player.vy = 0;
   player.grounded = true;
+  cameraX = 0;
 
   initHoverClaw();
 }
@@ -686,8 +699,19 @@ function updatePlatformLevel(dt) {
 
   for (const plat of platforms) resolveObstacle(player, plat);
 
-  player.x = Math.max(player.r, Math.min(W - player.r, player.x));
-  // The rooftop ground spans the full width, so this is just a safety net —
+  // Keep the bunny within the level's full world width, not just one screen.
+  player.x = Math.max(player.r, Math.min(LEVEL_WIDTH - player.r, player.x));
+
+  // Rightward-only scrolling camera, Super Mario style: once the bunny
+  // passes the midpoint of the screen the camera advances to keep her
+  // roughly centered, but it never scrolls back left, so the view keeps
+  // extending to the right and the bunny can't walk back off the left edge
+  // of the visible screen once it has advanced.
+  cameraX = Math.max(cameraX, Math.min(player.x - CAMERA_FOLLOW_X, LEVEL_WIDTH - W));
+  cameraX = Math.max(cameraX, 0);
+  player.x = Math.max(player.x, cameraX + player.r);
+
+  // The rooftop ground spans the whole level, so this is just a safety net —
   // it should never actually trigger.
   if (player.y > H + 60) { player.y = H - 20 - player.r; player.vy = 0; }
 }
@@ -791,14 +815,16 @@ function updateHoverClaw(dt) {
   // watching for the bunny to run underneath it moving right.
   c.patrolT += dt * HOVER_PATROL_SPEED;
   c.x = c.patrolCenter + Math.sin(c.patrolT) * HOVER_PATROL_AMPLITUDE;
-  c.x = Math.max(40, Math.min(W - 40, c.x));
+  // Clamped to the level's full world width, not just the visible screen,
+  // now that the camera scrolls the bunny past x=W.
+  c.x = Math.max(40, Math.min(LEVEL_WIDTH - 40, c.x));
   c.y = HOVER_CLAW_Y;
 
   if (c.cooldown <= 0 && player.vx > 0 && Math.abs(player.x - c.x) < HOVER_SWOOP_TRIGGER_RANGE) {
     c.swooping = true;
     c.swoopElapsed = 0;
     c.swoopStartX = c.x;
-    c.swoopEndX = Math.max(40, Math.min(W - 40, c.x + HOVER_SWOOP_ADVANCE));
+    c.swoopEndX = Math.max(40, Math.min(LEVEL_WIDTH - 40, c.x + HOVER_SWOOP_ADVANCE));
     c.swoopDiveY = Math.min(player.y - 6, H - 40);
   }
 }
@@ -1289,9 +1315,15 @@ function loop(ts) {
     updateHoverClaw(dt);
 
     drawPlatformBackground();
+    // Everything positioned in world space (platforms, the hover claw, the
+    // player) is drawn shifted left by cameraX so it appears in the right
+    // spot on screen as the level scrolls; the sky/HUD stay screen-fixed.
+    ctx.save();
+    ctx.translate(-cameraX, 0);
     drawPlatforms();
     drawHoverClaw(hoverClaw);
     drawPlayer(player);
+    ctx.restore();
     drawPlatformHUD();
 
     // Caught by the hovering claw's swoop — fade to game over, same as
@@ -1302,9 +1334,12 @@ function loop(ts) {
 
   } else if (state === STATE.PLATFORM_FADING) {
     drawPlatformBackground();
+    ctx.save();
+    ctx.translate(-cameraX, 0);
     drawPlatforms();
     drawHoverClaw(hoverClaw);
     drawPlayer(player);
+    ctx.restore();
     drawPlatformHUD();
 
     fadeAlpha = Math.min(1, fadeAlpha + fadeSpeed);
