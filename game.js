@@ -731,23 +731,32 @@ function updatePlatformLevel(dt) {
 }
 
 function drawPlatformBackground() {
+  // Indoor arcade backdrop — a dim, windowless wall (not sky) since the
+  // bunny has popped out onto the arcade's floor, not an outdoor rooftop.
   const grd = ctx.createLinearGradient(0, 0, 0, H);
-  grd.addColorStop(0, '#6ec6ff');
-  grd.addColorStop(1, '#bfe8ff');
+  grd.addColorStop(0, '#1b1330');
+  grd.addColorStop(1, '#3a2a55');
   ctx.fillStyle = grd;
   ctx.fillRect(0, 0, W, H);
 
-  // Sun
-  ctx.fillStyle = '#ffe066';
-  ctx.beginPath(); ctx.arc(W - 60, 60, 30, 0, Math.PI * 2); ctx.fill();
+  // Overhead arcade ceiling lights (in place of the sun)
+  ctx.fillStyle = 'rgba(255,240,190,0.85)';
+  drawCeilingLight(W - 60, 34);
 
-  // Clouds
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  drawCloud(90, 90);
-  drawCloud(260, 150);
+  // Distant neon arcade-sign glow (in place of clouds)
+  ctx.fillStyle = 'rgba(255,60,180,0.35)';
+  drawNeonGlow(90, 90);
+  ctx.fillStyle = 'rgba(60,220,255,0.3)';
+  drawNeonGlow(260, 140);
 }
 
-function drawCloud(cx, cy) {
+function drawCeilingLight(cx, cy) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawNeonGlow(cx, cy) {
   ctx.beginPath();
   ctx.arc(cx, cy, 16, 0, Math.PI * 2);
   ctx.arc(cx + 18, cy - 8, 20, 0, Math.PI * 2);
@@ -756,19 +765,21 @@ function drawCloud(cx, cy) {
 }
 
 function drawPlatforms() {
-  ctx.fillStyle = '#8a6d3b';
+  // Concrete arcade floor instead of the old wooden rooftop.
+  ctx.fillStyle = '#8f8f96';
   ctx.fillRect(groundPlat.x, groundPlat.y, groundPlat.w, groundPlat.h);
-  ctx.fillStyle = '#a9895a';
+  ctx.fillStyle = '#b7b7be';
   ctx.fillRect(groundPlat.x, groundPlat.y, groundPlat.w, 5);
 
   for (const plat of platforms) {
     // Skip anything off-screen — the platform list can span a long run of
     // the level, only the slice near the current camera view needs drawing.
     if (plat.x + plat.w < cameraX - 20 || plat.x > cameraX + W + 20) continue;
-    ctx.fillStyle = '#7cbf5c';
+    // Steel arcade ledges with a cyan neon trim, matching the indoor theme.
+    ctx.fillStyle = '#5a5f6b';
     ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-    ctx.fillStyle = '#9adf78';
-    ctx.fillRect(plat.x, plat.y, plat.w, 5);
+    ctx.fillStyle = '#4be0ff';
+    ctx.fillRect(plat.x, plat.y, plat.w, 3);
   }
 }
 
