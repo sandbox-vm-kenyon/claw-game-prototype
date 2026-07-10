@@ -644,28 +644,36 @@ function resolveClawBodies() {
 }
 
 // ─── Platform Level (Phase 2) ──────────────────────────────────────────────
-// Popping out of the top of the claw machine drops the bunny onto its roof,
-// a small platformer stage with a few floating platforms to jump between.
-// Reuses the same move/jump physics and the existing generic obstacle
-// collision (resolveObstacle) — a plain rectangle with no special "kind"
-// just supports landing on top / blocks from the side, exactly like the box
-// obstacles do.
+// Popping out of the top of the claw machine drops the bunny onto its roof —
+// a Super Mario-style side-scrolling stage that keeps extending to the right
+// as the bunny walks: a follow-camera (cameraX) tracks the player through an
+// effectively endless rooftop, and floating jump platforms are generated
+// procedurally in chunks just ahead of the camera's leading edge, rather
+// than the level being a single fixed screen. Reuses the same move/jump
+// physics and the existing generic obstacle collision (resolveObstacle) — a
+// plain rectangle with no special "kind" just supports landing on top /
+// blocks from the side, exactly like the box obstacles do. All game-object
+// coordinates (player, platforms, hover claw) stay in one continuous world
+// space; only drawing translates by -cameraX to place them on screen.
 
-let platforms;
+const PLATFORM_CHUNK_WIDTH = 500; // world-space width of one repeating platform pattern
+const GENERATE_AHEAD = W;         // keep platforms generated at least this far past the camera's right edge
+const DESPAWN_BEHIND = W;         // drop platforms once this far behind the camera's left edge
+
+let platforms;      // floating jump platforms, generated procedurally as the level scrolls
+let groundPlat;      // the rooftop itself — one very long safety-net platform under everything
+let cameraX;         // world-space x of the screen's left edge (the side-scroll camera)
+let generatedUpToX;  // rightmost world-x that platform chunks have been generated up to
 
 function initPlatformLevel() {
-  // Non-overlapping x-ranges (0-80, 100-180, 200-280, 300-380, 400-480) so
-  // no two platforms ever share airspace above/below each other — with the
-  // low, jump-reachable heights below, overlapping columns would otherwise
-  // sandwich the player between platforms with no room to land.
-  platforms = [
-    { x: 0,   y: H - 20, w: W,  h: 20 },  // the machine's rooftop (safety-net ground)
-    { x: 0,   y: H - 84, w: 80, h: 16 },
-    { x: 400, y: H - 88, w: 80, h: 16 },
-    { x: 200, y: H - 92, w: 80, h: 16 },
-    { x: 100, y: H - 96, w: 80, h: 16 },
-    { x: 300, y: H - 90, w: 80, h: 16 },
-  ];
+  // The rooftop spans the whole (effectively endless) level so the bunny
+  // always has ground under them; only the floating jump platforms need to
+  // be generated as the level extends.
+  groundPlat = { x: 0, y: H - 20, w: 200000, h: 20 };
+  platforms = [];
+  cameraX = 0;
+  generatedUpToX = 0;
+  generatePlatformsUpTo(W + GENERATE_AHEAD);
 
   player.x = W / 2;
   player.y = H - 20 - player.r;
@@ -676,6 +684,25 @@ function initPlatformLevel() {
   initHoverClaw();
 }
 
+// Repeats the original 5-platform jump pattern (same relative x offsets/
+// heights within each 500px chunk — non-overlapping so no two platforms
+// ever share airspace above/below each other) indefinitely to the right,
+// one chunk at a time, so the level keeps extending as the player advances
+// instead of ending after the first screen.
+function generatePlatformsUpTo(targetX) {
+  while (generatedUpToX < targetX) {
+    const base = generatedUpToX;
+    platforms.push(
+      { x: base + 0,   y: H - 84, w: 80, h: 16 },
+      { x: base + 400, y: H - 88, w: 80, h: 16 },
+      { x: base + 200, y: H - 92, w: 80, h: 16 },
+      { x: base + 100, y: H - 96, w: 80, h: 16 },
+      { x: base + 300, y: H - 90, w: 80, h: 16 },
+    );
+    generatedUpToX = base + PLATFORM_CHUNK_WIDTH;
+  }
+}
+
 function updatePlatformLevel(dt) {
   handleInput();
 
@@ -684,12 +711,23 @@ function updatePlatformLevel(dt) {
   player.y += player.vy * dt;
   player.grounded = false;
 
+  resolveObstacle(player, groundPlat);
   for (const plat of platforms) resolveObstacle(player, plat);
 
-  player.x = Math.max(player.r, Math.min(W - player.r, player.x));
-  // The rooftop ground spans the full width, so this is just a safety net —
-  // it should never actually trigger.
+  // Only the start of the level (world x = 0) blocks movement — there is no
+  // right-hand bound, since the level keeps extending as the bunny advances.
+  player.x = Math.max(player.r, player.x);
+  // The rooftop spans the whole generated level, so this is just a safety
+  // net — it should never actually trigger.
   if (player.y > H + 60) { player.y = H - 20 - player.r; player.vy = 0; }
+
+  // Side-scrolling camera: follow the player once they pass the screen's
+  // center (never scrolls left past the start of the level), and keep
+  // generating/dropping platform chunks so the level extends ahead of the
+  // camera without the platform list growing without bound.
+  cameraX = Math.max(0, player.x - W / 2);
+  generatePlatformsUpTo(cameraX + W + GENERATE_AHEAD);
+  platforms = platforms.filter(p => p.x + p.w > cameraX - DESPAWN_BEHIND);
 }
 
 function drawPlatformBackground() {
@@ -718,11 +756,18 @@ function drawCloud(cx, cy) {
 }
 
 function drawPlatforms() {
+  ctx.fillStyle = '#8a6d3b';
+  ctx.fillRect(groundPlat.x, groundPlat.y, groundPlat.w, groundPlat.h);
+  ctx.fillStyle = '#a9895a';
+  ctx.fillRect(groundPlat.x, groundPlat.y, groundPlat.w, 5);
+
   for (const plat of platforms) {
-    const isRoof = plat.y >= H - 20;
-    ctx.fillStyle = isRoof ? '#8a6d3b' : '#7cbf5c';
+    // Skip anything off-screen — the platform list can span a long run of
+    // the level, only the slice near the current camera view needs drawing.
+    if (plat.x + plat.w < cameraX - 20 || plat.x > cameraX + W + 20) continue;
+    ctx.fillStyle = '#7cbf5c';
     ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-    ctx.fillStyle = isRoof ? '#a9895a' : '#9adf78';
+    ctx.fillStyle = '#9adf78';
     ctx.fillRect(plat.x, plat.y, plat.w, 5);
   }
 }
@@ -787,18 +832,20 @@ function updateHoverClaw(dt) {
 
   if (c.cooldown > 0) c.cooldown -= dt;
 
-  // Hover/patrol: drift slowly side to side at a fixed altitude while
-  // watching for the bunny to run underneath it moving right.
+  // Hover/patrol: drift slowly side to side (in world space, so it travels
+  // along with the scrolling level) at a fixed altitude while watching for
+  // the bunny to run underneath it moving right. Only the world's left edge
+  // is a bound — there is no right-hand cap, since the level keeps
+  // extending as the bunny advances.
   c.patrolT += dt * HOVER_PATROL_SPEED;
-  c.x = c.patrolCenter + Math.sin(c.patrolT) * HOVER_PATROL_AMPLITUDE;
-  c.x = Math.max(40, Math.min(W - 40, c.x));
+  c.x = Math.max(40, c.patrolCenter + Math.sin(c.patrolT) * HOVER_PATROL_AMPLITUDE);
   c.y = HOVER_CLAW_Y;
 
   if (c.cooldown <= 0 && player.vx > 0 && Math.abs(player.x - c.x) < HOVER_SWOOP_TRIGGER_RANGE) {
     c.swooping = true;
     c.swoopElapsed = 0;
     c.swoopStartX = c.x;
-    c.swoopEndX = Math.max(40, Math.min(W - 40, c.x + HOVER_SWOOP_ADVANCE));
+    c.swoopEndX = Math.max(40, c.x + HOVER_SWOOP_ADVANCE);
     c.swoopDiveY = Math.min(player.y - 6, H - 40);
   }
 }
