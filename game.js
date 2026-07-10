@@ -654,13 +654,17 @@ function resolveClawBodies() {
 let platforms;
 
 function initPlatformLevel() {
+  // Non-overlapping x-ranges (0-80, 100-180, 200-280, 300-380, 400-480) so
+  // no two platforms ever share airspace above/below each other — with the
+  // low, jump-reachable heights below, overlapping columns would otherwise
+  // sandwich the player between platforms with no room to land.
   platforms = [
-    { x: 0,   y: H - 20,  w: W,   h: 20 },  // the machine's rooftop (safety-net ground)
-    { x: 40,  y: H - 120, w: 100, h: 16 },
-    { x: 330, y: H - 150, w: 110, h: 16 },
-    { x: 190, y: H - 230, w: 100, h: 16 },
-    { x: 90,  y: H - 330, w: 90,  h: 16 },
-    { x: 300, y: H - 340, w: 90,  h: 16 },
+    { x: 0,   y: H - 20, w: W,  h: 20 },  // the machine's rooftop (safety-net ground)
+    { x: 0,   y: H - 84, w: 80, h: 16 },
+    { x: 400, y: H - 88, w: 80, h: 16 },
+    { x: 200, y: H - 92, w: 80, h: 16 },
+    { x: 100, y: H - 96, w: 80, h: 16 },
+    { x: 300, y: H - 90, w: 80, h: 16 },
   ];
 
   player.x = W / 2;
