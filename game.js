@@ -643,63 +643,83 @@ function resolveClawBodies() {
   for (const c of claws) resolveObstacle(player, clawBodyRect(c));
 }
 
-// ─── Platform Level (Phase 2) ──────────────────────────────────────────────
-// Popping out of the top of the claw machine drops the bunny onto its roof —
-// a Super Mario-style side-scrolling stage that keeps extending to the right
-// as the bunny walks: a follow-camera (cameraX) tracks the player through an
-// effectively endless rooftop, and floating jump platforms are generated
-// procedurally in chunks just ahead of the camera's leading edge, rather
-// than the level being a single fixed screen. Reuses the same move/jump
-// physics and the existing generic obstacle collision (resolveObstacle) — a
-// plain rectangle with no special "kind" just supports landing on top /
-// blocks from the side, exactly like the box obstacles do. All game-object
-// coordinates (player, platforms, hover claw) stay in one continuous world
-// space; only drawing translates by -cameraX to place them on screen.
+// ─── Platform Level (Phase 2): Mario-style side-scroller ───────────────────
+// Popping out of the top of the claw machine drops the bunny into a fresh
+// rightward-scrolling platforming stage. This is a from-scratch rebuild of
+// an earlier, broken attempt: that version computed a follow-camera value
+// (cameraX) but never actually applied it anywhere when drawing, so every
+// world-space object (ground, platforms, the player) was rendered at its
+// raw world coordinate — the bunny visually ran straight off the right edge
+// of the canvas within a couple of steps and the "level" was unplayable.
+// It has been scrubbed entirely rather than patched.
+//
+// This rebuild keeps everything (ground, platforms, enemies, the player) in
+// one continuous world-space coordinate system, and funnels every
+// world-space draw call through exactly one camera translation
+// (drawPlatformWorld, below), so what's rendered can never drift from what's
+// simulated again. On top of that base, the stage is a genuine Mario-style
+// run: the ground is broken up by jumpable pits (falling in one is fatal,
+// just like being caught by a claw), a couple of floating platforms per
+// chunk add vertical variety, and a patrolling enemy per chunk must be
+// jumped over — or stomped from above, Goomba-style, to clear it.
 
-const PLATFORM_CHUNK_WIDTH = 500; // world-space width of one repeating platform pattern
-const GENERATE_AHEAD = W;         // keep platforms generated at least this far past the camera's right edge
-const DESPAWN_BEHIND = W;         // drop platforms once this far behind the camera's left edge
+const CHUNK_W = 900;      // world-space width of one repeating stage chunk
+const GAP_X = 620;        // x offset (within a chunk) where its ground pit starts
+const GAP_W = 80;         // pit width — comfortably inside the bunny's ~100px max jump distance
+const GROUND_Y = H - 20;  // world y of the ground's top surface
+const GENERATE_AHEAD = W; // keep chunks generated at least this far past the camera's right edge
+const DESPAWN_BEHIND = W; // drop world objects once this far behind the camera's left edge
+const ENEMY_SPEED = 1.1;  // px/frame the patrol enemy walks
+const ENEMY_W = 22, ENEMY_H = 18;
 
-let platforms;      // floating jump platforms, generated procedurally as the level scrolls
-let groundPlat;      // the rooftop itself — one very long safety-net platform under everything
+let groundSegments; // ground rects, split by pits (gaps) between chunks
+let stagePlatforms;  // floating jump platforms
+let enemies;         // patrolling enemies — stomp from above, deadly from the side
 let cameraX;         // world-space x of the screen's left edge (the side-scroll camera)
-let generatedUpToX;  // rightmost world-x that platform chunks have been generated up to
+let generatedUpToX;  // rightmost world-x that stage chunks have been generated up to
 
 function initPlatformLevel() {
-  // The rooftop spans the whole (effectively endless) level so the bunny
-  // always has ground under them; only the floating jump platforms need to
-  // be generated as the level extends.
-  groundPlat = { x: 0, y: H - 20, w: 200000, h: 20 };
-  platforms = [];
+  groundSegments = [];
+  stagePlatforms = [];
+  enemies = [];
   cameraX = 0;
   generatedUpToX = 0;
-  generatePlatformsUpTo(W + GENERATE_AHEAD);
+  generateChunksUpTo(W + GENERATE_AHEAD);
 
-  player.x = W / 2;
-  player.y = H - 20 - player.r;
+  player.x = 40;
+  player.y = GROUND_Y - player.r;
   player.vx = 0;
   player.vy = 0;
   player.grounded = true;
-
-  initHoverClaw();
 }
 
-// Repeats the original 5-platform jump pattern (same relative x offsets/
-// heights within each 500px chunk — non-overlapping so no two platforms
-// ever share airspace above/below each other) indefinitely to the right,
-// one chunk at a time, so the level keeps extending as the player advances
-// instead of ending after the first screen.
-function generatePlatformsUpTo(targetX) {
+// Repeats one deterministic chunk layout indefinitely to the right so the
+// stage keeps extending as the bunny advances, instead of ending after the
+// first screen. Each chunk: solid ground, then a pit, then solid ground
+// again (flush with the next chunk's start, so consecutive chunks tile with
+// no unintended gap at the seam), two floating platforms over the solid
+// stretch (both within jump-reach of the ground), and one enemy patrolling
+// the ground before the pit.
+function generateChunksUpTo(targetX) {
   while (generatedUpToX < targetX) {
     const base = generatedUpToX;
-    platforms.push(
-      { x: base + 0,   y: H - 84, w: 80, h: 16 },
-      { x: base + 400, y: H - 88, w: 80, h: 16 },
-      { x: base + 200, y: H - 92, w: 80, h: 16 },
-      { x: base + 100, y: H - 96, w: 80, h: 16 },
-      { x: base + 300, y: H - 90, w: 80, h: 16 },
+
+    groundSegments.push(
+      { x: base, y: GROUND_Y, w: GAP_X, h: 40 },
+      { x: base + GAP_X + GAP_W, y: GROUND_Y, w: CHUNK_W - (GAP_X + GAP_W), h: 40 },
     );
-    generatedUpToX = base + PLATFORM_CHUNK_WIDTH;
+
+    stagePlatforms.push(
+      { x: base + 180, y: GROUND_Y - 70, w: 90, h: 16 },
+      { x: base + 380, y: GROUND_Y - 95, w: 90, h: 16 },
+    );
+
+    enemies.push({
+      x: base + 300, y: GROUND_Y - ENEMY_H, w: ENEMY_W, h: ENEMY_H,
+      minX: base + 60, maxX: base + GAP_X - 60, dir: 1, dead: false,
+    });
+
+    generatedUpToX = base + CHUNK_W;
   }
 }
 
@@ -711,39 +731,77 @@ function updatePlatformLevel(dt) {
   player.y += player.vy * dt;
   player.grounded = false;
 
-  resolveObstacle(player, groundPlat);
-  for (const plat of platforms) resolveObstacle(player, plat);
+  for (const seg of groundSegments) resolveObstacle(player, seg);
+  for (const plat of stagePlatforms) resolveObstacle(player, plat);
 
-  // Only the start of the level (world x = 0) blocks movement — there is no
-  // right-hand bound, since the level keeps extending as the bunny advances.
+  // Only the very start of the stage blocks movement — there's no
+  // right-hand bound, since it keeps extending as the bunny advances.
   player.x = Math.max(player.r, player.x);
-  // The rooftop spans the whole generated level, so this is just a safety
-  // net — it should never actually trigger.
-  if (player.y > H + 60) { player.y = H - 20 - player.r; player.vy = 0; }
+
+  // Falling into a pit is just as fatal as being caught by a claw.
+  if (player.y > H + 60) {
+    state = STATE.PLATFORM_FADING;
+    return;
+  }
+
+  updateEnemies(dt);
 
   // Side-scrolling camera: follow the player once they pass the screen's
-  // center (never scrolls left past the start of the level), and keep
-  // generating/dropping platform chunks so the level extends ahead of the
-  // camera without the platform list growing without bound.
+  // center (never scrolls left past the start of the stage), and keep
+  // generating/dropping chunks so the stage extends ahead of the camera
+  // without the world-object lists growing without bound.
   cameraX = Math.max(0, player.x - W / 2);
-  generatePlatformsUpTo(cameraX + W + GENERATE_AHEAD);
-  platforms = platforms.filter(p => p.x + p.w > cameraX - DESPAWN_BEHIND);
+  generateChunksUpTo(cameraX + W + GENERATE_AHEAD);
+  groundSegments = groundSegments.filter(s => s.x + s.w > cameraX - DESPAWN_BEHIND);
+  stagePlatforms = stagePlatforms.filter(p => p.x + p.w > cameraX - DESPAWN_BEHIND);
+  enemies = enemies.filter(e => !e.dead && e.x + e.w > cameraX - DESPAWN_BEHIND);
+}
+
+// Ground-patrolling enemy: walks back and forth between its patrol bounds,
+// turning around at each end. Landing on it from above while falling stomps
+// it Goomba-style — it's removed and the bunny gets a small bounce; any
+// other contact (walking into its side, or being under it) is deadly, same
+// as being caught by a claw.
+function updateEnemies(dt) {
+  for (const e of enemies) {
+    if (e.dead) continue;
+
+    e.x += e.dir * ENEMY_SPEED * dt;
+    if (e.x <= e.minX) { e.x = e.minX; e.dir = 1; }
+    if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.dir = -1; }
+
+    const left = e.x, right = e.x + e.w, top = e.y, bottom = e.y + e.h;
+    const closestX = Math.max(left, Math.min(player.x, right));
+    const closestY = Math.max(top, Math.min(player.y, bottom));
+    const dx = player.x - closestX, dy = player.y - closestY;
+    if (dx * dx + dy * dy >= player.r * player.r) continue; // no overlap
+
+    // A stomp is falling contact where the bunny's feet were still above
+    // the enemy's top a moment before this frame's movement — i.e. she came
+    // down onto it, rather than walked into its side while already low.
+    const stomping = player.vy > 0 && (player.y - player.r - player.vy * dt) <= top;
+    if (stomping) {
+      e.dead = true;
+      player.vy = JUMP_VELOCITY * 0.55; // small bounce off its back
+    } else {
+      state = STATE.PLATFORM_FADING;
+      return;
+    }
+  }
 }
 
 function drawPlatformBackground() {
-  // Indoor arcade backdrop — a dim, windowless wall (not sky) since the
-  // bunny has popped out onto the arcade's floor, not an outdoor rooftop.
+  // Indoor arcade backdrop — a dim, windowless wall, matching the arcade
+  // theme the bunny popped out into.
   const grd = ctx.createLinearGradient(0, 0, 0, H);
   grd.addColorStop(0, '#1b1330');
   grd.addColorStop(1, '#3a2a55');
   ctx.fillStyle = grd;
   ctx.fillRect(0, 0, W, H);
 
-  // Overhead arcade ceiling lights (in place of the sun)
   ctx.fillStyle = 'rgba(255,240,190,0.85)';
   drawCeilingLight(W - 60, 34);
 
-  // Distant neon arcade-sign glow (in place of clouds)
   ctx.fillStyle = 'rgba(255,60,180,0.35)';
   drawNeonGlow(90, 90);
   ctx.fillStyle = 'rgba(60,220,255,0.3)';
@@ -764,23 +822,58 @@ function drawNeonGlow(cx, cy) {
   ctx.fill();
 }
 
-function drawPlatforms() {
-  // Concrete arcade floor instead of the old wooden rooftop.
-  ctx.fillStyle = '#8f8f96';
-  ctx.fillRect(groundPlat.x, groundPlat.y, groundPlat.w, groundPlat.h);
-  ctx.fillStyle = '#b7b7be';
-  ctx.fillRect(groundPlat.x, groundPlat.y, groundPlat.w, 5);
+// Draws every world-space entity (ground, platforms, enemies, the bunny)
+// through a single camera translation, so what's rendered always matches
+// where things actually are in the simulation. This is the fix for the
+// scrubbed attempt's core bug: there is now exactly one place the
+// world-to-screen offset happens, instead of it being computed but never
+// applied.
+function drawPlatformWorld() {
+  ctx.save();
+  ctx.translate(-cameraX, 0);
 
-  for (const plat of platforms) {
-    // Skip anything off-screen — the platform list can span a long run of
-    // the level, only the slice near the current camera view needs drawing.
+  for (const seg of groundSegments) {
+    if (seg.x + seg.w < cameraX - 20 || seg.x > cameraX + W + 20) continue;
+    ctx.fillStyle = '#8f8f96';
+    ctx.fillRect(seg.x, seg.y, seg.w, seg.h);
+    ctx.fillStyle = '#b7b7be';
+    ctx.fillRect(seg.x, seg.y, seg.w, 5);
+  }
+
+  for (const plat of stagePlatforms) {
     if (plat.x + plat.w < cameraX - 20 || plat.x > cameraX + W + 20) continue;
-    // Steel arcade ledges with a cyan neon trim, matching the indoor theme.
     ctx.fillStyle = '#5a5f6b';
     ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
     ctx.fillStyle = '#4be0ff';
     ctx.fillRect(plat.x, plat.y, plat.w, 3);
   }
+
+  for (const e of enemies) {
+    if (e.dead) continue;
+    if (e.x + e.w < cameraX - 20 || e.x > cameraX + W + 20) continue;
+    drawEnemy(e);
+  }
+
+  drawPlayer(player);
+
+  ctx.restore();
+}
+
+function drawEnemy(e) {
+  const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+  ctx.fillStyle = '#c33';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 2, e.w / 2, e.h / 2 - 1, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(cx - 5, cy - 1, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 5, cy - 1, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(cx - 5, cy - 1, 1.4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 5, cy - 1, 1.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#822';
+  ctx.fillRect(e.x + 2, e.y + e.h - 4, 5, 4);
+  ctx.fillRect(e.x + e.w - 7, e.y + e.h - 4, 5, 4);
 }
 
 function drawPlatformHUD() {
@@ -790,110 +883,6 @@ function drawPlatformHUD() {
   ctx.font = 'bold 13px monospace';
   ctx.fillStyle = '#3a3a3a';
   ctx.fillText('OUT OF THE MACHINE!', 12, 44);
-}
-
-// ─── Platform-level hovering claw ──────────────────────────────────────────
-// A second claw haunts the rooftop level — unlike the box's claw, it has no
-// cable/arm running up off the top of the screen; it just hovers, drifting
-// slowly back and forth, then swoops down in a fast arc to try to catch the
-// bunny whenever they run underneath it while moving right, before rising
-// back up to resume hovering (further along, tracking the bunny's progress).
-const HOVER_CLAW_Y = 70;              // altitude (px from top) the claw hovers/returns to
-const HOVER_PATROL_SPEED = 0.02;      // radians of drift per dt-unit while hovering
-const HOVER_PATROL_AMPLITUDE = 90;    // px either side of the current patrol center
-const HOVER_SWOOP_TRIGGER_RANGE = 70; // px — how close (in x) the bunny must be, moving right, to provoke a dive
-const HOVER_SWOOP_ADVANCE = 120;      // px the claw's hover point shifts forward after each swoop
-const HOVER_SWOOP_DURATION = 34;      // dt-units for a full dive-and-rise arc (~0.55s)
-const HOVER_SWOOP_COOLDOWN = 50;      // dt-units of hovering required before it can dive again
-
-let hoverClaw;
-
-function initHoverClaw() {
-  hoverClaw = {
-    x: 300, y: HOVER_CLAW_Y,
-    patrolCenter: 300, patrolT: 0,
-    armLen: 14, jawOpen: 18,
-    swooping: false, swoopElapsed: 0, cooldown: 0,
-    swoopStartX: 0, swoopEndX: 0, swoopDiveY: 0,
-  };
-}
-
-function updateHoverClaw(dt) {
-  const c = hoverClaw;
-  c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6; // pulsing jaw, same look as the box claw
-
-  if (c.swooping) {
-    // One continuous arc: dives from hover height down toward the bunny's
-    // position at trigger time, then rises back up to hover height further
-    // along, tracing a smooth curve (fast down, fast back up) rather than a
-    // straight line.
-    c.swoopElapsed = Math.min(c.swoopElapsed + dt, HOVER_SWOOP_DURATION);
-    const t = c.swoopElapsed / HOVER_SWOOP_DURATION;
-    c.x = c.swoopStartX + (c.swoopEndX - c.swoopStartX) * t;
-    c.y = HOVER_CLAW_Y + (c.swoopDiveY - HOVER_CLAW_Y) * Math.sin(Math.PI * t);
-    if (t >= 1) {
-      c.swooping = false;
-      c.y = HOVER_CLAW_Y;
-      c.patrolCenter = c.swoopEndX;
-      c.patrolT = 0;
-      c.cooldown = HOVER_SWOOP_COOLDOWN;
-    }
-    return;
-  }
-
-  if (c.cooldown > 0) c.cooldown -= dt;
-
-  // Hover/patrol: drift slowly side to side (in world space, so it travels
-  // along with the scrolling level) at a fixed altitude while watching for
-  // the bunny to run underneath it moving right. Only the world's left edge
-  // is a bound — there is no right-hand cap, since the level keeps
-  // extending as the bunny advances.
-  c.patrolT += dt * HOVER_PATROL_SPEED;
-  c.x = Math.max(40, c.patrolCenter + Math.sin(c.patrolT) * HOVER_PATROL_AMPLITUDE);
-  c.y = HOVER_CLAW_Y;
-
-  if (c.cooldown <= 0 && player.vx > 0 && Math.abs(player.x - c.x) < HOVER_SWOOP_TRIGGER_RANGE) {
-    c.swooping = true;
-    c.swoopElapsed = 0;
-    c.swoopStartX = c.x;
-    c.swoopEndX = Math.max(40, c.x + HOVER_SWOOP_ADVANCE);
-    c.swoopDiveY = Math.min(player.y - 6, H - 40);
-  }
-}
-
-function drawHoverClaw(c) {
-  // Body block — floats freely with no cable/arm running up off the top of
-  // the screen, unlike the box's claw (see drawClaw).
-  ctx.fillStyle = '#c33';
-  ctx.fillRect(c.x - 14, c.y - 14, 28, 18);
-  ctx.strokeStyle = '#f66';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(c.x - 14, c.y - 14, 28, 18);
-
-  const tipY = clawTipY(c);
-
-  ctx.strokeStyle = '#e44';
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(c.x, c.y + 4); ctx.lineTo(clawTipLeft(c), tipY); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(c.x, c.y + 4); ctx.lineTo(clawTipRight(c), tipY); ctx.stroke();
-
-  ctx.fillStyle = '#f88';
-  ctx.beginPath(); ctx.arc(clawTipLeft(c),  tipY, 4, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(clawTipRight(c), tipY, 4, 0, Math.PI * 2); ctx.fill();
-}
-
-// Same finger-tip-only hit test used for the box claw's finger tips — only
-// the jaw tips are harmful, so a near-miss on the body doesn't count.
-function checkHoverClawCollision(c) {
-  const tipY = clawTipY(c);
-  for (const tipX of [clawTipLeft(c), clawTipRight(c)]) {
-    const dx = player.x - tipX;
-    const dy = player.y - tipY;
-    const rr = player.r + FINGER_HIT_R;
-    if (dx * dx + dy * dy < rr * rr) return true;
-  }
-  return false;
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -1344,25 +1333,14 @@ function loop(ts) {
 
   } else if (state === STATE.PLATFORM) {
     updatePlatformLevel(dt);
-    updateHoverClaw(dt);
 
     drawPlatformBackground();
-    drawPlatforms();
-    drawHoverClaw(hoverClaw);
-    drawPlayer(player);
+    drawPlatformWorld();
     drawPlatformHUD();
-
-    // Caught by the hovering claw's swoop — fade to game over, same as
-    // getting caught by the box's claw.
-    if (checkHoverClawCollision(hoverClaw)) {
-      state = STATE.PLATFORM_FADING;
-    }
 
   } else if (state === STATE.PLATFORM_FADING) {
     drawPlatformBackground();
-    drawPlatforms();
-    drawHoverClaw(hoverClaw);
-    drawPlayer(player);
+    drawPlatformWorld();
     drawPlatformHUD();
 
     fadeAlpha = Math.min(1, fadeAlpha + fadeSpeed);
