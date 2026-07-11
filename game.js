@@ -681,7 +681,6 @@ const CHUNK_PATTERNS = [
       { x: 150, y: GROUND_Y - 70, w: 90, h: 16 },
       { x: 360, y: GROUND_Y - 90, w: 90, h: 16 },
     ],
-    enemyX: 280, enemyMinX: 40, enemyMaxX: 480,
   },
   {
     gapX: 620, gapW: 75,
@@ -689,7 +688,6 @@ const CHUNK_PATTERNS = [
       { x: 180, y: GROUND_Y - 75, w: 90, h: 16 },
       { x: 400, y: GROUND_Y - 85, w: 90, h: 16 },
     ],
-    enemyX: 310, enemyMinX: 60, enemyMaxX: 600,
   },
   {
     gapX: 720, gapW: 80,
@@ -697,7 +695,6 @@ const CHUNK_PATTERNS = [
       { x: 200, y: GROUND_Y - 65, w: 90, h: 16 },
       { x: 420, y: GROUND_Y - 100, w: 90, h: 16 },
     ],
-    enemyX: 330, enemyMinX: 80, enemyMaxX: 700,
   },
   {
     gapX: 570, gapW: 90,
@@ -705,7 +702,6 @@ const CHUNK_PATTERNS = [
       { x: 170, y: GROUND_Y - 80, w: 90, h: 16 },
       { x: 380, y: GROUND_Y - 70, w: 90, h: 16 },
     ],
-    enemyX: 300, enemyMinX: 50, enemyMaxX: 550,
   },
   {
     gapX: 640, gapW: 85,
@@ -713,7 +709,6 @@ const CHUNK_PATTERNS = [
       { x: 190, y: GROUND_Y - 90, w: 90, h: 16 },
       { x: 410, y: GROUND_Y - 75, w: 90, h: 16 },
     ],
-    enemyX: 320, enemyMinX: 70, enemyMaxX: 620,
   },
   {
     gapX: 500, gapW: 80,
@@ -721,7 +716,6 @@ const CHUNK_PATTERNS = [
       { x: 140, y: GROUND_Y - 85, w: 90, h: 16 },
       { x: 350, y: GROUND_Y - 95, w: 90, h: 16 },
     ],
-    enemyX: 270, enemyMinX: 30, enemyMaxX: 480,
   },
   {
     gapX: 680, gapW: 75,
@@ -729,7 +723,6 @@ const CHUNK_PATTERNS = [
       { x: 210, y: GROUND_Y - 70, w: 90, h: 16 },
       { x: 430, y: GROUND_Y - 80, w: 90, h: 16 },
     ],
-    enemyX: 340, enemyMinX: 90, enemyMaxX: 660,
   },
   {
     gapX: 600, gapW: 90,
@@ -737,7 +730,6 @@ const CHUNK_PATTERNS = [
       { x: 160, y: GROUND_Y - 75, w: 90, h: 16 },
       { x: 370, y: GROUND_Y - 100, w: 90, h: 16 },
     ],
-    enemyX: 290, enemyMinX: 60, enemyMaxX: 580,
   },
   {
     gapX: 550, gapW: 85,
@@ -745,7 +737,6 @@ const CHUNK_PATTERNS = [
       { x: 130, y: GROUND_Y - 95, w: 90, h: 16 },
       { x: 340, y: GROUND_Y - 65, w: 90, h: 16 },
     ],
-    enemyX: 260, enemyMinX: 40, enemyMaxX: 530,
   },
   {
     gapX: 660, gapW: 80,
@@ -753,7 +744,6 @@ const CHUNK_PATTERNS = [
       { x: 220, y: GROUND_Y - 80, w: 90, h: 16 },
       { x: 440, y: GROUND_Y - 90, w: 90, h: 16 },
     ],
-    enemyX: 350, enemyMinX: 100, enemyMaxX: 640,
   },
 ];
 
@@ -764,6 +754,21 @@ let cameraX;         // world-space x of the screen's left edge (the side-scroll
 let generatedUpToX;  // rightmost world-x that stage chunks have been generated up to
 let chunkCount;      // counter for determining which pattern to use
 
+// ─── Platform-level hovering claw ──────────────────────────────────────────
+// A second claw haunts the platform level — unlike the box's claw, it has no
+// cable/arm running up off the top of the screen; it just hovers, drifting
+// slowly back and forth, then swoops down in a fast arc to try to catch the
+// bunny whenever they run underneath it while moving right, before rising
+// back up to resume hovering (further along, tracking the bunny's progress).
+const HOVER_CLAW_Y = 70;              // altitude (px from top) the claw hovers/returns to
+const HOVER_PATROL_SPEED = 0.02;      // radians of drift per dt-unit while hovering
+const HOVER_PATROL_AMPLITUDE = 90;    // px either side of the current patrol center
+const HOVER_SWOOP_TRIGGER_RANGE = 70; // px — how close (in x) the bunny must be, moving right, to provoke a dive
+const HOVER_SWOOP_ADVANCE = 120;      // px the claw's hover point shifts forward after each swoop
+const HOVER_SWOOP_DURATION = 34;      // dt-units for a full dive-and-rise arc (~0.55s)
+const HOVER_SWOOP_COOLDOWN = 50;      // dt-units of hovering required before it can dive again
+
+let hoverClaw;
 function initPlatformLevel() {
   groundSegments = [];
   stagePlatforms = [];
@@ -778,6 +783,8 @@ function initPlatformLevel() {
   player.vx = 0;
   player.vy = 0;
   player.grounded = true;
+
+  initHoverClaw();
 }
 
 // Generates chunks using one of 10 randomized patterns. Each pattern defines
@@ -806,18 +813,6 @@ function generateChunksUpTo(targetX) {
       });
     }
 
-    // One enemy with patrol bounds from the pattern.
-    enemies.push({
-      x: base + pattern.enemyX,
-      y: GROUND_Y - ENEMY_H,
-      w: ENEMY_W,
-      h: ENEMY_H,
-      minX: base + pattern.enemyMinX,
-      maxX: base + pattern.enemyMaxX,
-      dir: 1,
-      dead: false,
-    });
-
     generatedUpToX = base + CHUNK_W;
     chunkCount++;
   }
@@ -844,7 +839,7 @@ function updatePlatformLevel(dt) {
     return;
   }
 
-  updateEnemies(dt);
+  updateHoverClaw(dt);
 
   // Side-scrolling camera: follow the player once they pass the screen's
   // center (never scrolls left past the start of the stage), and keep
@@ -854,40 +849,106 @@ function updatePlatformLevel(dt) {
   generateChunksUpTo(cameraX + W + GENERATE_AHEAD);
   groundSegments = groundSegments.filter(s => s.x + s.w > cameraX - DESPAWN_BEHIND);
   stagePlatforms = stagePlatforms.filter(p => p.x + p.w > cameraX - DESPAWN_BEHIND);
-  enemies = enemies.filter(e => !e.dead && e.x + e.w > cameraX - DESPAWN_BEHIND);
 }
 
-// Ground-patrolling enemy: walks back and forth between its patrol bounds,
-// turning around at each end. Landing on it from above while falling stomps
-// it Goomba-style — it's removed and the bunny gets a small bounce; any
-// other contact (walking into its side, or being under it) is deadly, same
-// as being caught by a claw.
-function updateEnemies(dt) {
-  for (const e of enemies) {
-    if (e.dead) continue;
+function initHoverClaw() {
+  hoverClaw = {
+    x: 300, y: HOVER_CLAW_Y,
+    patrolCenter: 300, patrolT: 0,
+    armLen: 14, jawOpen: 18,
+    swooping: false, swoopElapsed: 0, cooldown: 0,
+    swoopStartX: 0, swoopEndX: 0, swoopDiveY: 0,
+  };
+}
 
-    e.x += e.dir * ENEMY_SPEED * dt;
-    if (e.x <= e.minX) { e.x = e.minX; e.dir = 1; }
-    if (e.x + e.w >= e.maxX) { e.x = e.maxX - e.w; e.dir = -1; }
+function updateHoverClaw(dt) {
+  const c = hoverClaw;
+  c.jawOpen = 16 + Math.sin(Date.now() / 220) * 6; // pulsing jaw, same look as the box claw
 
-    const left = e.x, right = e.x + e.w, top = e.y, bottom = e.y + e.h;
-    const closestX = Math.max(left, Math.min(player.x, right));
-    const closestY = Math.max(top, Math.min(player.y, bottom));
-    const dx = player.x - closestX, dy = player.y - closestY;
-    if (dx * dx + dy * dy >= player.r * player.r) continue; // no overlap
-
-    // A stomp is falling contact where the bunny's feet were still above
-    // the enemy's top a moment before this frame's movement — i.e. she came
-    // down onto it, rather than walked into its side while already low.
-    const stomping = player.vy > 0 && (player.y - player.r - player.vy * dt) <= top;
-    if (stomping) {
-      e.dead = true;
-      player.vy = JUMP_VELOCITY * 0.55; // small bounce off its back
-    } else {
-      state = STATE.PLATFORM_FADING;
-      return;
+  if (c.swooping) {
+    // One continuous arc: dives from hover height down toward the bunny's
+    // position at trigger time, then rises back up to hover height further
+    // along, tracing a smooth curve (fast down, fast back up) rather than a
+    // straight line.
+    c.swoopElapsed = Math.min(c.swoopElapsed + dt, HOVER_SWOOP_DURATION);
+    const t = c.swoopElapsed / HOVER_SWOOP_DURATION;
+    c.x = c.swoopStartX + (c.swoopEndX - c.swoopStartX) * t;
+    c.y = HOVER_CLAW_Y + (c.swoopDiveY - HOVER_CLAW_Y) * Math.sin(Math.PI * t);
+    if (t >= 1) {
+      c.swooping = false;
+      c.y = HOVER_CLAW_Y;
+      c.patrolCenter = c.swoopEndX;
+      c.patrolT = 0;
+      c.cooldown = HOVER_SWOOP_COOLDOWN;
     }
+
+    // Check collision with player
+    checkHoverClawCollision(c);
+    return;
   }
+
+  if (c.cooldown > 0) c.cooldown -= dt;
+
+  // Hover/patrol: drift slowly side to side at a fixed altitude while
+  // watching for the bunny to run underneath it moving right.
+  c.patrolT += dt * HOVER_PATROL_SPEED;
+  c.x = c.patrolCenter + Math.sin(c.patrolT) * HOVER_PATROL_AMPLITUDE;
+  c.x = Math.max(40, Math.min(W * 4, c.x)); // allow patrol beyond screen edges in world space
+  c.y = HOVER_CLAW_Y;
+
+  if (c.cooldown <= 0 && player.vx > 0 && Math.abs((player.x + cameraX) - c.x) < HOVER_SWOOP_TRIGGER_RANGE) {
+    c.swooping = true;
+    c.swoopElapsed = 0;
+    c.swoopStartX = c.x;
+    c.swoopEndX = Math.max(40, Math.min(W * 4, c.x + HOVER_SWOOP_ADVANCE));
+    c.swoopDiveY = Math.min(player.y + cameraX * 0 - 6, H - 40); // dive toward bunny's world-space y
+  }
+
+  // Check collision with player while hovering
+  checkHoverClawCollision(c);
+}
+
+function checkHoverClawCollision(c) {
+  // Only the jaw tips are harmful (same as box claw), so a near-miss on the
+  // body doesn't count.
+  const tipY = c.y + c.armLen;
+  const left = clawTipLeft(c), right = clawTipRight(c);
+
+  // Check left finger
+  let dx = player.x - left, dy = player.y - tipY;
+  if (dx * dx + dy * dy < player.r * player.r) {
+    state = STATE.PLATFORM_FADING;
+    return;
+  }
+
+  // Check right finger
+  dx = player.x - right; dy = player.y - tipY;
+  if (dx * dx + dy * dy < player.r * player.r) {
+    state = STATE.PLATFORM_FADING;
+    return;
+  }
+}
+
+function drawHoverClaw(c) {
+  // Body block — floats freely with no cable/arm running up off the top of
+  // the screen, unlike the box's claw.
+  ctx.fillStyle = '#c33';
+  ctx.fillRect(c.x - 14, c.y - 14, 28, 18);
+  ctx.strokeStyle = '#f66';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(c.x - 14, c.y - 14, 28, 18);
+
+  const tipY = c.y + c.armLen;
+
+  ctx.strokeStyle = '#e44';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(c.x, c.y + 4); ctx.lineTo(clawTipLeft(c), tipY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(c.x, c.y + 4); ctx.lineTo(clawTipRight(c), tipY); ctx.stroke();
+
+  ctx.fillStyle = '#f88';
+  ctx.beginPath(); ctx.arc(clawTipLeft(c),  tipY, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(clawTipRight(c), tipY, 4, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawPlatformBackground() {
@@ -948,12 +1009,7 @@ function drawPlatformWorld() {
     ctx.fillRect(plat.x, plat.y, plat.w, 3);
   }
 
-  for (const e of enemies) {
-    if (e.dead) continue;
-    if (e.x + e.w < cameraX - 20 || e.x > cameraX + W + 20) continue;
-    drawEnemy(e);
-  }
-
+  drawHoverClaw(hoverClaw);
   drawPlayer(player);
 
   ctx.restore();
