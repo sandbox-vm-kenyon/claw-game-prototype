@@ -383,7 +383,7 @@ const CLAW_SPAWN_Y = -40;
 // fall, so the claw's final x actually reflects where the bunny recently
 // was, while still preserving a short, readable straight-down strike at the
 // very end.
-const CLAW_LOCK_Y = CLAW_SPAWN_Y + (H - CLAW_SPAWN_Y) * 0.85;
+const CLAW_LOCK_Y = CLAW_SPAWN_Y + (H - CLAW_SPAWN_Y) * 0.75;
 
 function updateClaws(dt) {
   const t = secondsElapsed();
