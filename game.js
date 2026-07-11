@@ -664,19 +664,105 @@ function resolveClawBodies() {
 // jumped over — or stomped from above, Goomba-style, to clear it.
 
 const CHUNK_W = 900;      // world-space width of one repeating stage chunk
-const GAP_X = 620;        // x offset (within a chunk) where its ground pit starts
-const GAP_W = 80;         // pit width — comfortably inside the bunny's ~100px max jump distance
+const GAP_X = 620;        // x offset (within a chunk) where its ground pit starts (LEGACY — now per-pattern)
+const GAP_W = 80;         // pit width — comfortably inside the bunny's ~100px max jump distance (LEGACY — now per-pattern)
 const GROUND_Y = H - 20;  // world y of the ground's top surface
 const GENERATE_AHEAD = W; // keep chunks generated at least this far past the camera's right edge
 const DESPAWN_BEHIND = W; // drop world objects once this far behind the camera's left edge
 const ENEMY_SPEED = 1.1;  // px/frame the patrol enemy walks
 const ENEMY_W = 22, ENEMY_H = 18;
 
+// 10 randomized chunk patterns. Each pattern defines pit position/width, platform locations, and enemy bounds.
+// Using deterministic selection (chunkIndex % 10) ensures the same pattern repeats at the same chunk position.
+const CHUNK_PATTERNS = [
+  {
+    gapX: 520, gapW: 85,
+    platforms: [
+      { x: 150, y: GROUND_Y - 70, w: 90, h: 16 },
+      { x: 360, y: GROUND_Y - 90, w: 90, h: 16 },
+    ],
+    enemyX: 280, enemyMinX: 40, enemyMaxX: 480,
+  },
+  {
+    gapX: 620, gapW: 75,
+    platforms: [
+      { x: 180, y: GROUND_Y - 75, w: 90, h: 16 },
+      { x: 400, y: GROUND_Y - 85, w: 90, h: 16 },
+    ],
+    enemyX: 310, enemyMinX: 60, enemyMaxX: 600,
+  },
+  {
+    gapX: 720, gapW: 80,
+    platforms: [
+      { x: 200, y: GROUND_Y - 65, w: 90, h: 16 },
+      { x: 420, y: GROUND_Y - 100, w: 90, h: 16 },
+    ],
+    enemyX: 330, enemyMinX: 80, enemyMaxX: 700,
+  },
+  {
+    gapX: 570, gapW: 90,
+    platforms: [
+      { x: 170, y: GROUND_Y - 80, w: 90, h: 16 },
+      { x: 380, y: GROUND_Y - 70, w: 90, h: 16 },
+    ],
+    enemyX: 300, enemyMinX: 50, enemyMaxX: 550,
+  },
+  {
+    gapX: 640, gapW: 85,
+    platforms: [
+      { x: 190, y: GROUND_Y - 90, w: 90, h: 16 },
+      { x: 410, y: GROUND_Y - 75, w: 90, h: 16 },
+    ],
+    enemyX: 320, enemyMinX: 70, enemyMaxX: 620,
+  },
+  {
+    gapX: 500, gapW: 80,
+    platforms: [
+      { x: 140, y: GROUND_Y - 85, w: 90, h: 16 },
+      { x: 350, y: GROUND_Y - 95, w: 90, h: 16 },
+    ],
+    enemyX: 270, enemyMinX: 30, enemyMaxX: 480,
+  },
+  {
+    gapX: 680, gapW: 75,
+    platforms: [
+      { x: 210, y: GROUND_Y - 70, w: 90, h: 16 },
+      { x: 430, y: GROUND_Y - 80, w: 90, h: 16 },
+    ],
+    enemyX: 340, enemyMinX: 90, enemyMaxX: 660,
+  },
+  {
+    gapX: 600, gapW: 90,
+    platforms: [
+      { x: 160, y: GROUND_Y - 75, w: 90, h: 16 },
+      { x: 370, y: GROUND_Y - 100, w: 90, h: 16 },
+    ],
+    enemyX: 290, enemyMinX: 60, enemyMaxX: 580,
+  },
+  {
+    gapX: 550, gapW: 85,
+    platforms: [
+      { x: 130, y: GROUND_Y - 95, w: 90, h: 16 },
+      { x: 340, y: GROUND_Y - 65, w: 90, h: 16 },
+    ],
+    enemyX: 260, enemyMinX: 40, enemyMaxX: 530,
+  },
+  {
+    gapX: 660, gapW: 80,
+    platforms: [
+      { x: 220, y: GROUND_Y - 80, w: 90, h: 16 },
+      { x: 440, y: GROUND_Y - 90, w: 90, h: 16 },
+    ],
+    enemyX: 350, enemyMinX: 100, enemyMaxX: 640,
+  },
+];
+
 let groundSegments; // ground rects, split by pits (gaps) between chunks
 let stagePlatforms;  // floating jump platforms
 let enemies;         // patrolling enemies — stomp from above, deadly from the side
 let cameraX;         // world-space x of the screen's left edge (the side-scroll camera)
 let generatedUpToX;  // rightmost world-x that stage chunks have been generated up to
+let chunkCount;      // counter for determining which pattern to use
 
 function initPlatformLevel() {
   groundSegments = [];
@@ -684,6 +770,7 @@ function initPlatformLevel() {
   enemies = [];
   cameraX = 0;
   generatedUpToX = 0;
+  chunkCount = 0;
   generateChunksUpTo(W + GENERATE_AHEAD);
 
   player.x = 40;
@@ -693,33 +780,46 @@ function initPlatformLevel() {
   player.grounded = true;
 }
 
-// Repeats one deterministic chunk layout indefinitely to the right so the
-// stage keeps extending as the bunny advances, instead of ending after the
-// first screen. Each chunk: solid ground, then a pit, then solid ground
-// again (flush with the next chunk's start, so consecutive chunks tile with
-// no unintended gap at the seam), two floating platforms over the solid
-// stretch (both within jump-reach of the ground), and one enemy patrolling
-// the ground before the pit.
+// Generates chunks using one of 10 randomized patterns. Each pattern defines
+// a distinct pit position/width, platform locations, and enemy placement.
+// Pattern selection is deterministic (chunkCount % 10) so the same pattern
+// repeats at the same chunk index across runs — players can learn the layout.
 function generateChunksUpTo(targetX) {
   while (generatedUpToX < targetX) {
     const base = generatedUpToX;
+    const patternIdx = chunkCount % CHUNK_PATTERNS.length;
+    const pattern = CHUNK_PATTERNS[patternIdx];
 
+    // Ground: solid segment before pit, solid segment after pit.
     groundSegments.push(
-      { x: base, y: GROUND_Y, w: GAP_X, h: 40 },
-      { x: base + GAP_X + GAP_W, y: GROUND_Y, w: CHUNK_W - (GAP_X + GAP_W), h: 40 },
+      { x: base, y: GROUND_Y, w: pattern.gapX, h: 40 },
+      { x: base + pattern.gapX + pattern.gapW, y: GROUND_Y, w: CHUNK_W - (pattern.gapX + pattern.gapW), h: 40 },
     );
 
-    stagePlatforms.push(
-      { x: base + 180, y: GROUND_Y - 70, w: 90, h: 16 },
-      { x: base + 380, y: GROUND_Y - 95, w: 90, h: 16 },
-    );
+    // Two floating platforms from the pattern.
+    for (const plat of pattern.platforms) {
+      stagePlatforms.push({
+        x: base + plat.x,
+        y: plat.y,
+        w: plat.w,
+        h: plat.h,
+      });
+    }
 
+    // One enemy with patrol bounds from the pattern.
     enemies.push({
-      x: base + 300, y: GROUND_Y - ENEMY_H, w: ENEMY_W, h: ENEMY_H,
-      minX: base + 60, maxX: base + GAP_X - 60, dir: 1, dead: false,
+      x: base + pattern.enemyX,
+      y: GROUND_Y - ENEMY_H,
+      w: ENEMY_W,
+      h: ENEMY_H,
+      minX: base + pattern.enemyMinX,
+      maxX: base + pattern.enemyMaxX,
+      dir: 1,
+      dead: false,
     });
 
     generatedUpToX = base + CHUNK_W;
+    chunkCount++;
   }
 }
 
