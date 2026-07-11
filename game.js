@@ -685,8 +685,10 @@ const DOOR_H = 80;
 const DOOR_X_FROM_END = 120;  // how far from the end of the 10 chunks the door sits
 const NUM_CHUNKS = 10;        // number of randomized patterns before the door
 
-// 10 randomized chunk patterns. Each pattern defines pit position/width, platform locations, and enemy bounds.
-// Using deterministic selection (chunkIndex % 10) ensures the same pattern repeats at the same chunk position.
+// Pool of chunk pattern templates. Each pattern defines a pit position/width
+// and floating-platform locations. generateChunksUpTo() picks one at RANDOM
+// per chunk (seeded per level run), so a given run's layout is genuinely
+// randomized rather than the same fixed sequence every time.
 const CHUNK_PATTERNS = [
   {
     gapX: 520, gapW: 85,
@@ -765,7 +767,28 @@ let stagePlatforms;  // floating jump platforms
 let enemies;         // patrolling enemies — stomp from above, deadly from the side
 let cameraX;         // world-space x of the screen's left edge (the side-scroll camera)
 let generatedUpToX;  // rightmost world-x that stage chunks have been generated up to
-let chunkCount;      // counter for determining which pattern to use
+let chunkCount;      // counter for how many chunks have been generated
+let levelRng;        // seeded PRNG so each level run gets a genuinely random —
+                     // but internally-consistent — layout (mulberry32)
+
+// Small seeded PRNG. Given the same seed it returns the same stream, so a
+// single level run has a stable layout (platforms/pits don't shift under the
+// player) while different runs get genuinely different, randomized layouts —
+// unlike the previous `chunkCount % 10` selection, which produced the exact
+// same sequence every single run and so was only random in appearance.
+function makeRng(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// Max horizontal reach of a full jump is ~115px (JUMP_VELOCITY/GRAVITY/MOVE_SPEED);
+// cap generated pit widths well inside that so every pit is comfortably
+// clearable with a running jump and no chunk is an impossible dead-end.
+const MAX_PIT_W = 92;
 
 // ─── Platform-level hovering claw ──────────────────────────────────────────
 // A second claw haunts the platform level — unlike the box's claw, it has no
@@ -789,6 +812,9 @@ function initPlatformLevel() {
   cameraX = 0;
   generatedUpToX = 0;
   chunkCount = 0;
+  // Fresh random seed each time the platform level starts, so the layout is
+  // genuinely randomized between runs (but consistent within a single run).
+  levelRng = makeRng((Date.now() ^ (Math.random() * 0x100000000)) >>> 0);
   generateChunksUpTo(W + GENERATE_AHEAD);
 
   player.x = 40;
@@ -811,21 +837,35 @@ function initPlatformLevel() {
   initHoverClaw();
 }
 
-// Generates chunks using one of 10 randomized patterns. Each pattern defines
-// a distinct pit position/width, platform locations, and enemy placement.
-// Pattern selection is deterministic (chunkCount % 10) so the same pattern
-// repeats at the same chunk index across runs — players can learn the layout.
+// Generates chunks by picking, at random, one of the pattern templates for
+// each chunk. Selection is driven by the per-run seeded PRNG (levelRng) rather
+// than `chunkCount % 10`, so layouts differ genuinely between runs while
+// staying stable within a single run. Two fairness guarantees keep every
+// generated layout traversable:
+//   • The FIRST chunk is always pit-free, giving the bunny a safe runway right
+//     after popping out of the machine (so simply starting to walk right can
+//     never drop you into a pit "for no reason").
+//   • Every pit is clamped to MAX_PIT_W, comfortably inside the ~115px max jump
+//     reach, so no gap is impossible and no chunk becomes a dead-end.
 function generateChunksUpTo(targetX) {
   while (generatedUpToX < targetX) {
     const base = generatedUpToX;
-    const patternIdx = chunkCount % CHUNK_PATTERNS.length;
+    const patternIdx = Math.floor(levelRng() * CHUNK_PATTERNS.length) % CHUNK_PATTERNS.length;
     const pattern = CHUNK_PATTERNS[patternIdx];
 
-    // Ground: solid segment before pit, solid segment after pit.
-    groundSegments.push(
-      { x: base, y: GROUND_Y, w: pattern.gapX, h: 40 },
-      { x: base + pattern.gapX + pattern.gapW, y: GROUND_Y, w: CHUNK_W - (pattern.gapX + pattern.gapW), h: 40 },
-    );
+    if (chunkCount === 0) {
+      // Safe opening chunk: solid ground the whole way across, no pit, so the
+      // player always has firm footing immediately after entering the stage.
+      groundSegments.push({ x: base, y: GROUND_Y, w: CHUNK_W, h: 40 });
+    } else {
+      // Ground: solid segment before pit, solid segment after pit. Pit width is
+      // clamped so it is always jumpable.
+      const gapW = Math.min(pattern.gapW, MAX_PIT_W);
+      groundSegments.push(
+        { x: base, y: GROUND_Y, w: pattern.gapX, h: 40 },
+        { x: base + pattern.gapX + gapW, y: GROUND_Y, w: CHUNK_W - (pattern.gapX + gapW), h: 40 },
+      );
+    }
 
     // Two floating platforms from the pattern.
     for (const plat of pattern.platforms) {
@@ -932,12 +972,19 @@ function updateHoverClaw(dt) {
   c.x = Math.max(40, Math.min(W * 4, c.x)); // allow patrol beyond screen edges in world space
   c.y = HOVER_CLAW_Y;
 
-  if (c.cooldown <= 0 && player.vx > 0 && Math.abs((player.x + cameraX) - c.x) < HOVER_SWOOP_TRIGGER_RANGE) {
+  // The bunny and the hover claw both live in world space (the camera
+  // translation is applied once, at draw time). So the swoop trigger must
+  // compare the bunny's world x directly against the claw's world x — a
+  // previous version added cameraX to player.x, double-counting the camera
+  // offset, which made the claw dive at a point ~100-200px away from where
+  // the bunny actually was and then catch them "for no reason" as they
+  // walked into that spot.
+  if (c.cooldown <= 0 && player.vx > 0 && Math.abs(player.x - c.x) < HOVER_SWOOP_TRIGGER_RANGE) {
     c.swooping = true;
     c.swoopElapsed = 0;
     c.swoopStartX = c.x;
     c.swoopEndX = Math.max(40, Math.min(W * 4, c.x + HOVER_SWOOP_ADVANCE));
-    c.swoopDiveY = Math.min(player.y + cameraX * 0 - 6, H - 40); // dive toward bunny's world-space y
+    c.swoopDiveY = Math.min(player.y - 6, H - 40); // dive toward bunny's world-space y
   }
 
   // Check collision with player while hovering
