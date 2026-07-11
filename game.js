@@ -9,7 +9,7 @@ const H = canvas.height;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4, PLATFORM_FADING: 5, GRAB_FADE_OUT: 6, GRAB_FADE_IN: 7 };
+const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4, PLATFORM_FADING: 5, GRAB_FADE_OUT: 6, GRAB_FADE_IN: 7, END_LEVEL: 8 };
 
 let state, player, claws, obstacles, score, fadeAlpha, fadeSpeed, gameOverAlpha;
 let runStartTime;
@@ -34,6 +34,13 @@ const DROP_CHANCE = 0.5; // odds a grab is let go mid-retract instead of held al
 let popoutStartY, popoutElapsed;
 const POPOUT_DURATION = 30;  // dt-units (~0.5s at 60fps)
 const POPOUT_RISE = 140;     // extra px the player visibly rises during the pop
+
+// Exit door (end of platform stage): triggers a level-complete sequence when
+// the bunny reaches it. The door appears at the end of the 10 randomized chunks.
+let door;  // { x, y, w, h }
+let doorAlpha;  // for fade-in animation
+const DOOR_FADE_DURATION = 30;  // dt-units to fade to white on door touch
+let doorTouchElapsed;
 
 // ─── Platformer physics tuning ─────────────────────────────────────────────
 const MOVE_SPEED = 3.2;
@@ -672,6 +679,12 @@ const DESPAWN_BEHIND = W; // drop world objects once this far behind the camera'
 const ENEMY_SPEED = 1.1;  // px/frame the patrol enemy walks
 const ENEMY_W = 22, ENEMY_H = 18;
 
+// Exit door (end of platform stage level)
+const DOOR_W = 40;
+const DOOR_H = 80;
+const DOOR_X_FROM_END = 120;  // how far from the end of the 10 chunks the door sits
+const NUM_CHUNKS = 10;        // number of randomized patterns before the door
+
 // 10 randomized chunk patterns. Each pattern defines pit position/width, platform locations, and enemy bounds.
 // Using deterministic selection (chunkIndex % 10) ensures the same pattern repeats at the same chunk position.
 const CHUNK_PATTERNS = [
@@ -784,6 +797,17 @@ function initPlatformLevel() {
   player.vy = 0;
   player.grounded = true;
 
+  // Door at the end of 10 chunks
+  const doorWorldX = NUM_CHUNKS * CHUNK_W + DOOR_X_FROM_END;
+  door = {
+    x: doorWorldX,
+    y: GROUND_Y - DOOR_H,
+    w: DOOR_W,
+    h: DOOR_H,
+  };
+  doorAlpha = 0;
+  doorTouchElapsed = 0;
+
   initHoverClaw();
 }
 
@@ -840,6 +864,18 @@ function updatePlatformLevel(dt) {
   }
 
   updateHoverClaw(dt);
+
+  // Check if player has reached the exit door
+  if (door) {
+    const dx = player.x - door.x;
+    const dy = player.y - door.y;
+    if (dx >= -door.w / 2 && dx <= door.w / 2 && dy >= -door.h / 2 && dy <= door.h / 2) {
+      // Player touched the door — start the END_LEVEL sequence
+      state = STATE.END_LEVEL;
+      doorTouchElapsed = 0;
+      return;
+    }
+  }
 
   // Side-scrolling camera: follow the player once they pass the screen's
   // center (never scrolls left past the start of the stage), and keep
@@ -1010,6 +1046,7 @@ function drawPlatformWorld() {
   }
 
   drawHoverClaw(hoverClaw);
+  if (door) drawDoor(door);
   drawPlayer(player);
 
   ctx.restore();
@@ -1030,6 +1067,25 @@ function drawEnemy(e) {
   ctx.fillStyle = '#822';
   ctx.fillRect(e.x + 2, e.y + e.h - 4, 5, 4);
   ctx.fillRect(e.x + e.w - 7, e.y + e.h - 4, 5, 4);
+}
+
+function drawDoor(d) {
+  // Black door frame with a window
+  ctx.fillStyle = '#222';
+  ctx.fillRect(d.x - d.w / 2, d.y, d.w, d.h);
+
+  // Door window with a slight glow
+  ctx.fillStyle = '#333';
+  ctx.fillRect(d.x - d.w / 2 + 4, d.y + 10, d.w - 8, d.h - 20);
+
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(d.x - d.w / 2 + 6, d.y + 12, d.w - 12, d.h - 24);
+
+  // Door knob
+  ctx.fillStyle = '#f0ad4e';
+  ctx.beginPath();
+  ctx.arc(d.x + d.w / 2 - 8, d.y + d.h / 2, 3, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawPlatformHUD() {
@@ -1493,6 +1549,24 @@ function loop(ts) {
     drawPlatformBackground();
     drawPlatformWorld();
     drawPlatformHUD();
+
+  } else if (state === STATE.END_LEVEL) {
+    drawPlatformBackground();
+    drawPlatformWorld();
+    drawPlatformHUD();
+
+    // Fade to white on door touch to indicate level complete
+    doorTouchElapsed = Math.min(doorTouchElapsed + dt, DOOR_FADE_DURATION);
+    const doorProgress = doorTouchElapsed / DOOR_FADE_DURATION;
+    ctx.fillStyle = `rgba(255,255,255,${doorProgress * 0.8})`;
+    ctx.fillRect(0, 0, W, H);
+
+    if (doorProgress >= 1) {
+      // Level complete — show a brief message before returning to the main game
+      // or could trigger next stage/end screen here
+      state = STATE.GAME_OVER;
+      gameOverAlpha = 0;
+    }
 
   } else if (state === STATE.PLATFORM_FADING) {
     drawPlatformBackground();
