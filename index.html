@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Claw Machine Game</title>
   <style>
     * {
@@ -16,13 +16,22 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       min-height: 100vh;
       font-family: 'Segoe UI', Arial, sans-serif;
       overflow: hidden;
       -webkit-user-select: none;
       user-select: none;
       -webkit-touch-callout: none;
+      /* Reserve room at the bottom of the page for the fixed controls bar
+         (joystick is the tallest control at 96px + 8px inset = ~104px) plus
+         the iOS Chrome bottom button bar (safe-area inset). Content is
+         top-anchored (justify-content:flex-start) so the canvas is laid out
+         from the top and this reserved band at the bottom is never encroached
+         on — the controls therefore always sit BELOW the canvas, and are
+         lifted clear of the Chrome bar by the safe-area inset. */
+      padding-top: 6px;
+      padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
     }
     h1 {
       color: #ffe066;
@@ -36,6 +45,17 @@
       border-radius: 18px;
       box-shadow: 0 0 40px #a259ff88, 0 0 80px #ff6ec744;
       background: #0d0820;
+      /* Keep the canvas's internal resolution at 480x520 (game.js reads those
+         pixel dimensions), but scale its ON-SCREEN size down to fit the space
+         that remains above the h1, the instructions, and the reserved
+         controls/Chrome-bar band at the bottom. This guarantees the whole
+         game view sits ABOVE the controls on short (iOS Chrome) viewports
+         instead of being overlapped by them. The 480/520 aspect ratio is
+         preserved via aspect-ratio + width derived from the height cap. */
+      aspect-ratio: 480 / 520;
+      width: auto;
+      height: min(520px, calc(100vh - 200px - env(safe-area-inset-bottom, 0px)));
+      max-width: 100vw;
     }
     #instructions {
       color: #b0a0d0;
@@ -46,19 +66,32 @@
     }
     #wrapper { position: relative; touch-action: none; overflow: visible; }
 
-    /* One-handed controls: joystick on the left, single action button on
-       the right, both overlaid on the canvas corners so a thumb never has
-       to leave its side of the screen. */
+    /* One-handed controls bar. This sits in normal document flow BELOW the
+       game canvas (it is NOT absolutely positioned inside #wrapper), so the
+       joystick and jump button can never overlap the gameplay area. It is
+       pinned to the bottom of the viewport and lifted above the iOS Chrome
+       bottom button bar via the safe-area inset, so it stays fully visible. */
+    #controls {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      pointer-events: none; /* only the controls themselves capture touches */
+      z-index: 10;
+    }
     #joystick {
-      position: absolute;
-      left: 16px;
-      bottom: 66px;
+      position: relative;
       width: 96px;
       height: 96px;
       border-radius: 50%;
       background: rgba(255,255,255,0.08);
       border: 2px solid rgba(162,89,255,0.55);
       touch-action: none;
+      pointer-events: auto;
     }
     #joystickKnob {
       position: absolute;
@@ -74,9 +107,7 @@
       pointer-events: none;
     }
     #btnJump {
-      position: absolute;
-      right: 16px;
-      bottom: 66px;
+      position: relative;
       width: 76px;
       height: 76px;
       border-radius: 50%;
@@ -89,6 +120,7 @@
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
+      pointer-events: auto;
     }
     #btnJump:active { transform: scale(0.94); box-shadow: 0 2px 8px #a259ff44; }
 
@@ -125,11 +157,13 @@
   <h1>&#127381; CLAW MACHINE &#127381;</h1>
   <div id="wrapper">
     <canvas id="canvas" width="480" height="520"></canvas>
-    <div id="joystick"><div id="joystickKnob"></div></div>
-    <button id="btnJump">JUMP</button>
     <button id="btnPlayAgain">PLAY AGAIN</button>
   </div>
   <div id="instructions">Left joystick = Move &nbsp;|&nbsp; Right button = Jump &nbsp;|&nbsp; Arrow keys / A D / W / Space also work &nbsp;|&nbsp; Dodge the claw! &nbsp;|&nbsp; Game over? Press R or tap Play Again</div>
+  <div id="controls">
+    <div id="joystick"><div id="joystickKnob"></div></div>
+    <button id="btnJump">JUMP</button>
+  </div>
 
 <script src="game.js"></script>
 <script>
