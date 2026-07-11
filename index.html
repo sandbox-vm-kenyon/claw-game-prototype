@@ -44,7 +44,7 @@
       text-align: center;
       letter-spacing: 0.5px;
     }
-    #wrapper { position: relative; touch-action: none; }
+    #wrapper { position: relative; touch-action: none; overflow: visible; padding-bottom: 120px; }
 
     /* One-handed controls: joystick on the left, single action button on
        the right, both overlaid on the canvas corners so a thumb never has
@@ -52,7 +52,7 @@
     #joystick {
       position: absolute;
       left: 16px;
-      bottom: 16px;
+      bottom: -90px;
       width: 96px;
       height: 96px;
       border-radius: 50%;
@@ -76,7 +76,7 @@
     #btnJump {
       position: absolute;
       right: 16px;
-      bottom: 16px;
+      bottom: -90px;
       width: 76px;
       height: 76px;
       border-radius: 50%;
