@@ -1433,10 +1433,14 @@ function drawFoldingEar(r, angFromTop, furColor, furShadow, innerEar) {
   ctx.rotate(angFromTop);
 
   // How much this ear should fold: it flops away from the ground. We measure
-  // the ear-root's world angle relative to straight-down; when the ear points
-  // downward (into the floor) we bend it progressively.
-  // localGroundAngle is the direction of "down" in this rotated frame.
-  const downAng = _earDownAngle - angFromTop; // 0 => ear points straight down
+  // the angle between the ear's own outward direction and the ground.
+  // In this ear-local frame the ear points "up" (local angle -PI/2), while the
+  // direction toward the ground sits at (_earDownAngle - angFromTop). The ear
+  // aims at the floor when those coincide, so offset the ground direction by
+  // that -PI/2 so that d === 0 means the ear points straight down (not to the
+  // side). Without this offset the fold triggered a quarter-turn early, folding
+  // the ears against the right edge instead of against the ground.
+  const downAng = (_earDownAngle - angFromTop) + Math.PI / 2; // 0 => ear points straight down
   // Normalize to [-PI, PI]
   let d = Math.atan2(Math.sin(downAng), Math.cos(downAng));
   // fold factor: 1 when the ear points at the ground, 0 when it points up/away.
