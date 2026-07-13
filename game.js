@@ -60,6 +60,10 @@ const MOVE_SPEED = 3.2;
 const GRAVITY = 0.6;
 const JUMP_VELOCITY = -14;
 const MAX_FALL_SPEED = 14;
+// Airborne horizontal boost: while jumping, the bunny covers 20% more
+// horizontal ground per frame than while grounded, so a full running jump
+// lands ~20% farther without changing jump height (airtime is unchanged).
+const AIR_HORIZONTAL_BOOST = 1.2;
 
 function init() {
   // Fresh game start / Play Again: refill the life pool and reset the
@@ -855,9 +859,9 @@ function makeRng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-// Max horizontal reach of a full jump is ~115px (JUMP_VELOCITY/GRAVITY/MOVE_SPEED);
-// cap generated pit widths well inside that so every pit is comfortably
-// clearable with a running jump and no chunk is an impossible dead-end.
+// Max horizontal reach of a full jump is ~138px (JUMP_VELOCITY/GRAVITY/MOVE_SPEED
+// with the 20% airborne horizontal boost); cap generated pit widths well inside
+// that so every pit is comfortably clearable and no chunk is an impossible dead-end.
 const MAX_PIT_W = 92;
 
 // ─── Platform-level hovering claw ──────────────────────────────────────────
@@ -1320,7 +1324,10 @@ function tryJump() {
 function applyPlayerJumpPhysics(dt) {
   handleInput();
   player.vy = Math.min(player.vy + GRAVITY, MAX_FALL_SPEED);
-  player.x += player.vx * dt;
+  // While airborne, apply the horizontal boost so the jump's horizontal reach
+  // is ~20% greater than grounded movement, without altering jump height.
+  const horizVx = player.grounded ? player.vx : player.vx * AIR_HORIZONTAL_BOOST;
+  player.x += horizVx * dt;
   player.y += player.vy * dt;
 }
 
