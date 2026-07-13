@@ -1393,10 +1393,143 @@ function drawObstacles() {
   for (const ob of obstacles) drawObstacle(ob);
 }
 
+// Draws one folding ear in the head's LOCAL, roll-rotated frame.
+//  angFromTop  – the ear's mounting angle around the head, measured so that
+//                0 is straight up. As the head rolls this rotates with it.
+//  The ear is drawn as a segmented stalk so it can bend: whenever the ear
+//  swings low enough that its tip would pass below the ground contact point
+//  it folds/flops back against the floor instead of clipping through it.
+function drawFoldingEar(r, angFromTop, furColor, furShadow, innerEar) {
+  const earW = r * 0.55;
+  const earH = r * 1.9;
+  const segs = 5;
+
+  // World-space downward direction expressed in the head's local (roll-rotated)
+  // frame. `groundDirLocal` is passed in via closure-free globals set by the
+  // caller (see drawPlayer); here we derive the ear's own outward direction.
+  ctx.save();
+  // Rotate into the ear's mounting angle (relative to local "up").
+  ctx.rotate(angFromTop);
+
+  // How much this ear should fold: it flops away from the ground. We measure
+  // the ear-root's world angle relative to straight-down; when the ear points
+  // downward (into the floor) we bend it progressively.
+  // localGroundAngle is the direction of "down" in this rotated frame.
+  const downAng = _earDownAngle - angFromTop; // 0 => ear points straight down
+  // Normalize to [-PI, PI]
+  let d = Math.atan2(Math.sin(downAng), Math.cos(downAng));
+  // fold factor: 1 when the ear points at the ground, 0 when it points up/away.
+  const nearGround = Math.max(0, Math.cos(d)); // 1 when pointing down
+  const fold = nearGround * nearGround;        // ease-in the fold
+
+  // Build the ear as a chain of segments; each successive segment bends toward
+  // horizontal (away from the ground) proportionally to `fold`, so the tip
+  // curls back against the floor rather than spearing through it.
+  const segLen = earH / segs;
+  let px = 0, py = 0;
+  let dirX = 0, dirY = -1;         // start pointing "up" in local frame
+  const bendPerSeg = fold * (Math.PI * 0.42); // total bend distributed along ear
+  // bend the ear sideways, away from the ground contact (sign follows d)
+  const bendSign = d >= 0 ? -1 : 1;
+
+  ctx.beginPath();
+  const pts = [{ x: px, y: py }];
+  for (let i = 0; i < segs; i++) {
+    const ang = bendSign * bendPerSeg * ((i + 1) / segs);
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const ndx = dirX * ca - dirY * sa;
+    const ndy = dirX * sa + dirY * ca;
+    dirX = ndx; dirY = ndy;
+    px += dirX * segLen;
+    py += dirY * segLen;
+    pts.push({ x: px, y: py });
+  }
+
+  // Draw the ear as a tapering capsule following the bent spine.
+  const half = earW / 2;
+  ctx.beginPath();
+  // one side out
+  for (let i = 0; i < pts.length; i++) {
+    const t = i / (pts.length - 1);
+    const w = half * (1 - 0.35 * t);
+    // perpendicular to local spine tangent
+    const tan = i < pts.length - 1
+      ? { x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y }
+      : { x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y };
+    const tl = Math.hypot(tan.x, tan.y) || 1;
+    const nx = -tan.y / tl, ny = tan.x / tl;
+    const X = pts[i].x + nx * w, Y = pts[i].y + ny * w;
+    if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+  }
+  // back down the other side
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const t = i / (pts.length - 1);
+    const w = half * (1 - 0.35 * t);
+    const tan = i < pts.length - 1
+      ? { x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y }
+      : { x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y };
+    const tl = Math.hypot(tan.x, tan.y) || 1;
+    const nx = -tan.y / tl, ny = tan.x / tl;
+    const X = pts[i].x - nx * w, Y = pts[i].y - ny * w;
+    ctx.lineTo(X, Y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = furColor;
+  ctx.fill();
+  ctx.strokeStyle = furShadow;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Inner-ear detail follows the same bent spine, slightly inset.
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const t = i / (pts.length - 1);
+    const w = (half - 3) * (1 - 0.35 * t);
+    if (w <= 0) continue;
+    const tan = i < pts.length - 1
+      ? { x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y }
+      : { x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y };
+    const tl = Math.hypot(tan.x, tan.y) || 1;
+    const nx = -tan.y / tl, ny = tan.x / tl;
+    const X = pts[i].x + nx * w, Y = pts[i].y + ny * w;
+    if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+  }
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const t = i / (pts.length - 1);
+    const w = (half - 3) * (1 - 0.35 * t);
+    if (w <= 0) continue;
+    const tan = i < pts.length - 1
+      ? { x: pts[i + 1].x - pts[i].x, y: pts[i + 1].y - pts[i].y }
+      : { x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y };
+    const tl = Math.hypot(tan.x, tan.y) || 1;
+    const nx = -tan.y / tl, ny = tan.x / tl;
+    const X = pts[i].x - nx * w, Y = pts[i].y - ny * w;
+    ctx.lineTo(X, Y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = innerEar;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// Angle (in the head's roll-rotated local frame) that points toward the
+// ground contact point. Set each frame by drawPlayer before it draws ears.
+let _earDownAngle = 0;
+
 function drawPlayer(p) {
   const r = p.r;
 
-  // Soft glow
+  // ── Rolling: accumulate a roll angle from actual horizontal travel, so the
+  // head spins like a wheel in the direction of movement (roll = distance/r).
+  if (p._prevX === undefined) p._prevX = p.x;
+  const dx = p.x - p._prevX;
+  p._prevX = p.x;
+  if (p.roll === undefined) p.roll = 0;
+  p.roll += dx / r;               // radians of roll per pixel travelled
+  const roll = p.roll;
+
+  // Soft glow (unrotated, under everything)
   const grd = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, r * 2.2);
   grd.addColorStop(0, 'rgba(255,255,255,0.22)');
   grd.addColorStop(1, 'rgba(255,255,255,0)');
@@ -1409,30 +1542,25 @@ function drawPlayer(p) {
   const furShadow = '#d8c9b0';
   const innerEar = '#f3b6c2';
 
-  // Ears (drawn behind the head, tipped slightly outward)
-  const earW = r * 0.6;
-  const earH = r * 1.9;
-  for (const side of [-1, 1]) {
-    ctx.save();
-    ctx.translate(p.x + side * r * 0.45, p.y - r * 0.6);
-    ctx.rotate(side * 0.15);
-    ctx.beginPath();
-    ctx.ellipse(0, -earH / 2, earW / 2, earH / 2, 0, 0, Math.PI * 2);
-    ctx.fillStyle = furColor;
-    ctx.fill();
-    ctx.strokeStyle = furShadow;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(0, -earH / 2 + 2, earW / 2 - 4, earH / 2 - 6, 0, 0, Math.PI * 2);
-    ctx.fillStyle = innerEar;
-    ctx.fill();
-    ctx.restore();
-  }
+  // In the head's local frame the world "down" direction (toward the ground
+  // contact point) sits at world angle +PI/2; after the head rolls by `roll`,
+  // that same world-down direction lives at local angle (PI/2 - roll).
+  _earDownAngle = Math.PI / 2 - roll;
+
+  // Everything (ears + face) is drawn in a frame translated to the player and
+  // rotated by the roll angle, so the whole head visibly rolls.
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(roll);
+
+  // Ears (drawn behind the head). Each ear is mounted a little outward from the
+  // top and folds against the ground as the head rolls it into contact.
+  drawFoldingEar(r, -0.45, furColor, furShadow, innerEar); // left ear
+  drawFoldingEar(r,  0.45, furColor, furShadow, innerEar); // right ear
 
   // Head/body
   ctx.beginPath();
-  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fillStyle = furColor;
   ctx.fill();
   ctx.strokeStyle = furShadow;
@@ -1441,22 +1569,24 @@ function drawPlayer(p) {
 
   // Cheeks
   ctx.fillStyle = 'rgba(243,182,194,0.5)';
-  ctx.beginPath(); ctx.arc(p.x - r * 0.5, p.y + r * 0.2, r * 0.22, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(p.x + r * 0.5, p.y + r * 0.2, r * 0.22, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-r * 0.5, r * 0.2, r * 0.22, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc( r * 0.5, r * 0.2, r * 0.22, 0, Math.PI * 2); ctx.fill();
 
   // Eyes
   ctx.fillStyle = '#2b2b2b';
-  ctx.beginPath(); ctx.arc(p.x - r * 0.32, p.y - r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(p.x + r * 0.32, p.y - r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-r * 0.32, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc( r * 0.32, -r * 0.05, r * 0.13, 0, Math.PI * 2); ctx.fill();
 
   // Nose
   ctx.fillStyle = '#e07a92';
   ctx.beginPath();
-  ctx.moveTo(p.x, p.y + r * 0.18);
-  ctx.lineTo(p.x - r * 0.12, p.y + r * 0.32);
-  ctx.lineTo(p.x + r * 0.12, p.y + r * 0.32);
+  ctx.moveTo(0, r * 0.18);
+  ctx.lineTo(-r * 0.12, r * 0.32);
+  ctx.lineTo( r * 0.12, r * 0.32);
   ctx.closePath();
   ctx.fill();
+
+  ctx.restore();
 }
 
 function drawClaw(c) {
