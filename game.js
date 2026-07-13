@@ -958,11 +958,10 @@ function generateChunksUpTo(targetX) {
 }
 
 function updatePlatformLevel(dt) {
-  handleInput();
-
-  player.vy = Math.min(player.vy + GRAVITY, MAX_FALL_SPEED);
-  player.x += player.vx * dt;
-  player.y += player.vy * dt;
+  // Movement, gravity, and jumping come from the shared, level-agnostic helper
+  // — identical to the box stage and to any future level — so the bunny's jump
+  // mechanic carries over automatically with no per-stage re-wiring.
+  applyPlayerJumpPhysics(dt);
   player.grounded = false;
 
   for (const seg of groundSegments) resolveObstacle(player, seg);
@@ -1257,7 +1256,18 @@ function handleInput() {
   else if (keys['ArrowRight'] || keys['d'] || keys['D']) player.vx = player.speed;
   else player.vx = 0;
 
-  // Jump — only while grounded, so holding the key won't re-trigger mid-air
+  // Jump — delegated to the shared, level-agnostic jump trigger so every
+  // stage (present or future) gets identical jump behavior.
+  tryJump();
+}
+
+// Shared, stage-independent jump trigger. This is the single source of truth
+// for "the bunny jumps": it reads the same jump inputs (Arrow-Up / W / Space,
+// and — via keys['ArrowUp'] — the on-screen JUMP button) in every level, and
+// only launches while grounded so holding the key won't re-trigger mid-air.
+// Any new stage that wants jumping just needs to call applyPlayerJumpPhysics()
+// (or handleInput()) — it never has to re-implement this.
+function tryJump() {
   const jumpPressed = keys['ArrowUp'] || keys['w'] || keys['W'] || keys[' '];
   if (jumpPressed && player.grounded) {
     player.vy = JUMP_VELOCITY;
@@ -1265,13 +1275,24 @@ function handleInput() {
   }
 }
 
-function updatePlayerPhysics() {
-  // Gravity
+// Shared, level-agnostic player jump/gravity physics. Applies horizontal &
+// vertical input, gravity, and the jump velocity uniformly, then integrates the
+// player's position for the frame. It deliberately does NOT do stage-specific
+// collision/bounds — each stage runs its own collision pass (box floor+obstacles,
+// platform segments, etc.) after calling this. Because the jump mechanic lives
+// here (and in tryJump), any level added now or in the future inherits jumping
+// simply by calling this helper; there is no per-stage jump re-wiring.
+function applyPlayerJumpPhysics(dt) {
+  handleInput();
   player.vy = Math.min(player.vy + GRAVITY, MAX_FALL_SPEED);
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+}
 
-  // Apply velocity
-  player.x += player.vx;
-  player.y += player.vy;
+function updatePlayerPhysics(dt) {
+  // Movement, gravity, and jumping are handled by the shared, level-agnostic
+  // helper so this stage stays in lockstep with every other level's jump feel.
+  applyPlayerJumpPhysics(dt);
 
   // Ground collision (floor of the box)
   const groundY = H - player.r;
@@ -1717,8 +1738,7 @@ function loop(ts) {
     // her, instead of gravity/input fighting the carry each frame.
     const grabbedBefore = claws.some(c => c.grabbing && c.grabbedIsPlayer);
     if (!grabbedBefore) {
-      handleInput();
-      updatePlayerPhysics();
+      updatePlayerPhysics(dt);
       resolveObstacles();
       resolveClawBodies();
     }
