@@ -797,11 +797,11 @@ const MAX_PIT_W = 92;
 // bunny whenever they run underneath it while moving right, before rising
 // back up to resume hovering (further along, tracking the bunny's progress).
 const HOVER_CLAW_Y = 70;              // altitude (px from top) the claw hovers/returns to
-const HOVER_PATROL_SPEED = 0.02;      // radians of drift per dt-unit while hovering
+const HOVER_PATROL_SPEED = 0.01;      // radians of drift per dt-unit while hovering (halved to slow the hover claw down)
 const HOVER_PATROL_AMPLITUDE = 90;    // px either side of the current patrol center
 const HOVER_SWOOP_TRIGGER_RANGE = 150;// px ahead of the claw at which an approaching bunny provokes a dive (telegraphed early)
 const HOVER_SWOOP_ADVANCE = 120;      // px the claw's hover point shifts forward after each swoop
-const HOVER_SWOOP_DURATION = 34;      // dt-units for a full dive-and-rise arc (~0.55s)
+const HOVER_SWOOP_DURATION = 60;      // dt-units for a full dive-and-rise arc (~1.0s; slowed from 34 so the swoop is easier to dodge)
 const HOVER_SWOOP_COOLDOWN = 50;      // dt-units of hovering required before it can dive again
 // The swoop dives to a FIXED, telegraphed depth (the jaw tips reach this world
 // y at the bottom of the arc) rather than homing onto the bunny's own position.
