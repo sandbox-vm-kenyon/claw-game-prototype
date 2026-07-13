@@ -878,6 +878,8 @@ const HOVER_SWOOP_COOLDOWN = 50;      // dt-units of hovering required before it
 // targeted `player.y - 6` (ground level) and hugged the running bunny, so
 // merely walking right was an unavoidable game-over "for no reason".
 const HOVER_SWOOP_TIP_DEPTH = GROUND_Y - 120; // deepest the harmful jaw tips descend
+const HOVER_CLAW_MIN_ONSCREEN_X = 40; // px inset from the screen's left edge the claw's body is never allowed to fall behind (keeps it on-screen behind the player)
+const HOVER_CLAW_MAX_X = NUM_CHUNKS * CHUNK_W; // world x the claw may range up to (full stage width; the old W*4 cap pinned it ~1920px in and broke tracking deeper into the level)
 
 let hoverClaw;
 function initPlatformLevel() {
@@ -1030,6 +1032,12 @@ function updateHoverClaw(dt) {
     c.swoopElapsed = Math.min(c.swoopElapsed + dt, HOVER_SWOOP_DURATION);
     const t = c.swoopElapsed / HOVER_SWOOP_DURATION;
     c.x = c.swoopStartX + (c.swoopEndX - c.swoopStartX) * t;
+    // Keep the diving claw on-screen too: if the player sprints forward mid-arc
+    // and the camera scrolls past the swoop's world x, drag the arc's x forward
+    // so the claw never dips off the left edge while diving.
+    if (c.x < cameraX + HOVER_CLAW_MIN_ONSCREEN_X) {
+      c.x = cameraX + HOVER_CLAW_MIN_ONSCREEN_X;
+    }
     c.y = HOVER_CLAW_Y + (c.swoopDiveY - HOVER_CLAW_Y) * Math.sin(Math.PI * t);
     if (t >= 1) {
       c.swooping = false;
@@ -1050,8 +1058,26 @@ function updateHoverClaw(dt) {
   // watching for the bunny to run underneath it moving right.
   c.patrolT += dt * HOVER_PATROL_SPEED;
   c.x = c.patrolCenter + Math.sin(c.patrolT) * HOVER_PATROL_AMPLITUDE;
-  c.x = Math.max(40, Math.min(W * 4, c.x)); // allow patrol beyond screen edges in world space
+  c.x = Math.max(40, Math.min(HOVER_CLAW_MAX_X, c.x)); // allow patrol beyond screen edges in world space
   c.y = HOVER_CLAW_Y;
+
+  // On-screen tether: never let the claw fall so far behind the advancing
+  // player that it scrolls off the left edge. The visible viewport spans world
+  // x [cameraX, cameraX + W]; if the player pulls far enough right that the
+  // claw's rightmost edge would leave the screen, drag its patrol center
+  // forward so it stays within view (a small HOVER_CLAW_MIN_ONSCREEN_X inset
+  // from the left edge). This keeps the hazard on-screen and behind the player
+  // rather than disappearing off the left.
+  const minCenterX = cameraX + HOVER_CLAW_MIN_ONSCREEN_X - HOVER_PATROL_AMPLITUDE;
+  if (c.patrolCenter < minCenterX) {
+    c.patrolCenter = minCenterX;
+    c.x = c.patrolCenter + Math.sin(c.patrolT) * HOVER_PATROL_AMPLITUDE;
+  }
+  // Also hard-clamp the instantaneous x so a swing of the patrol sine never
+  // dips the body off the left of the screen.
+  if (c.x < cameraX + HOVER_CLAW_MIN_ONSCREEN_X) {
+    c.x = cameraX + HOVER_CLAW_MIN_ONSCREEN_X;
+  }
 
   // The bunny and the hover claw both live in world space (the camera
   // translation is applied once, at draw time). So the swoop trigger must
@@ -1069,7 +1095,13 @@ function updateHoverClaw(dt) {
     c.swooping = true;
     c.swoopElapsed = 0;
     c.swoopStartX = c.x;
-    c.swoopEndX = Math.max(40, Math.min(W * 4, c.x + HOVER_SWOOP_ADVANCE));
+    // Aim the dive at the bunny's CURRENT location at the moment the swoop
+    // begins: the arc's lowest point (t=0.5) sits over where the player is now,
+    // so the claw descends toward the bunny rather than a stale/fixed point.
+    // The horizontal sweep continues past that point so the claw rises back up
+    // ahead of the player (still advancing forward as before).
+    const targetX = player.x;
+    c.swoopEndX = Math.max(40, Math.min(HOVER_CLAW_MAX_X, 2 * targetX - c.swoopStartX));
     // Fixed dive depth (jaw tips reach HOVER_SWOOP_TIP_DEPTH at the low point),
     // never the ground — a bunny running along the floor clears underneath it.
     c.swoopDiveY = HOVER_SWOOP_TIP_DEPTH - c.armLen;
