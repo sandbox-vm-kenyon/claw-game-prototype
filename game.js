@@ -1568,8 +1568,9 @@ function drawFoldingEar(r, angFromTop, furColor, furShadow, innerEar) {
   // Normalize to [-PI, PI]
   let d = Math.atan2(Math.sin(downAng), Math.cos(downAng));
   // fold factor: 1 when the ear points at the ground, 0 when it points up/away.
+  // Suppressed entirely while airborne so mid-jump ears stay straight.
   const nearGround = Math.max(0, Math.cos(d)); // 1 when pointing down
-  const fold = nearGround * nearGround;        // ease-in the fold
+  const fold = _earFoldActive ? nearGround * nearGround : 0; // ease-in the fold (grounded only)
 
   // Build the ear as a chain of segments; each successive segment bends toward
   // horizontal (away from the ground) proportionally to `fold`, so the tip
@@ -1666,17 +1667,31 @@ function drawFoldingEar(r, angFromTop, furColor, furShadow, innerEar) {
 // ground contact point. Set each frame by drawPlayer before it draws ears.
 let _earDownAngle = 0;
 
+// Whether the ground-fold should be applied to the ears this frame. Set by
+// drawPlayer to the player's grounded state so ears only fold on a surface and
+// stay straight mid-jump.
+let _earFoldActive = true;
+
 function drawPlayer(p) {
   const r = p.r;
 
   // ── Rolling: accumulate a roll angle from actual horizontal travel, so the
   // head spins like a wheel in the direction of movement (roll = distance/r).
+  // The spin only makes sense while the bunny is actually rolling along a
+  // surface; mid-jump the head should hold still rather than keep spinning, so
+  // roll is frozen at its last grounded value while airborne (and _prevX is
+  // still tracked so the spin resumes seamlessly on landing without a snap).
   if (p._prevX === undefined) p._prevX = p.x;
   const dx = p.x - p._prevX;
   p._prevX = p.x;
   if (p.roll === undefined) p.roll = 0;
-  p.roll += dx / r;               // radians of roll per pixel travelled
+  if (p.grounded) p.roll += dx / r; // radians of roll per pixel travelled (grounded only)
   const roll = p.roll;
+
+  // Ears only fold against the ground while the bunny is standing on a surface.
+  // In the air they stay straight even when the arc happens to aim them
+  // downward, so drawFoldingEar is told whether folding is currently active.
+  _earFoldActive = p.grounded;
 
   // Soft glow (unrotated, under everything)
   const grd = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, r * 2.2);
