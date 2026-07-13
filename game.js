@@ -14,6 +14,19 @@ const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4, PLA
 let state, player, claws, obstacles, score, fadeAlpha, fadeSpeed, gameOverAlpha;
 let runStartTime;
 
+// ─── Lives / checkpoint system ─────────────────────────────────────────────
+// The player gets a small pool of lives. Dying (being hauled off by a claw in
+// the box, falling into a pit, or being caught by the hover claw on the roof)
+// no longer ends the run outright — instead it spends a life and respawns the
+// player at the START of the highest stage they have reached so far:
+//   • stage 1 = the box/claw-machine level (STATE.PLAYING)
+//   • stage 2 = the rooftop platform level (STATE.PLATFORM)
+// So a death in stage 2 restarts stage 2, not the whole game. Only once every
+// life is used up does the real game-over / Play Again screen appear. Lives
+// reset to the full pool on a fresh game start / Play Again.
+const START_LIVES = 5;
+let lives, highestStage;
+
 // Grab-and-carry: when the claw comes to a stop fully aligned (in x) over a
 // crate/turtle/ball, it grabs that item and hauls it up with the retract.
 // Once fully retracted, play briefly pauses for a fade-to-black-and-back —
@@ -49,6 +62,11 @@ const JUMP_VELOCITY = -11;
 const MAX_FALL_SPEED = 14;
 
 function init() {
+  // Fresh game start / Play Again: refill the life pool and reset the
+  // highest-reached checkpoint back to stage 1 (the box level).
+  lives = START_LIVES;
+  highestStage = 1;
+
   state = STATE.PLAYING;
   fadeAlpha = 0;
   gameOverAlpha = 0;
@@ -75,6 +93,55 @@ function init() {
   spawnClaw();
 
   initObstacles();
+}
+
+// Reset just the box/claw-machine stage (stage 1) to its opening layout,
+// WITHOUT touching the run-wide lives/score/highest-stage bookkeeping — used
+// to respawn the player at the start of stage 1 after a death when stage 1 is
+// still the highest stage they've reached.
+function respawnBoxStage() {
+  state = STATE.PLAYING;
+  fadeAlpha = 0;
+  fadeSpeed = 0.018;
+
+  grabFadeAlpha = 0;
+  grabFadeClaw = null;
+
+  player = {
+    x: W / 2,
+    y: H - 14,   // start standing on the ground
+    r: 14,
+    speed: MOVE_SPEED,
+    vx: 0,
+    vy: 0,
+    grounded: false,
+  };
+
+  claws = [];
+  spawnClaw();
+
+  initObstacles();
+}
+
+// Central death handler: spend a life and either respawn at the start of the
+// highest stage reached, or — once no lives remain — proceed to the real
+// game-over screen. Called the moment a fatal fade-to-black completes so the
+// player briefly sees the death animation before respawning.
+function handleDeath() {
+  lives--;
+  if (lives > 0) {
+    // Respawn at the beginning of the highest stage reached so far.
+    if (highestStage >= 2) {
+      initPlatformLevel();
+      state = STATE.PLATFORM;
+    } else {
+      respawnBoxStage();
+    }
+  } else {
+    // Out of lives — this is a real game over.
+    state = STATE.GAME_OVER;
+    gameOverAlpha = 0;
+  }
 }
 
 // ─── Obstacles (other animals/objects in the box) ─────────────────────────
@@ -1164,6 +1231,7 @@ function drawPlatformHUD() {
   ctx.font = 'bold 13px monospace';
   ctx.fillStyle = '#3a3a3a';
   ctx.fillText('OUT OF THE MACHINE!', 12, 44);
+  drawLives('#2a2a2a');
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -1445,6 +1513,20 @@ function drawHUD() {
   ctx.fillStyle = '#4af';
   ctx.font = 'bold 16px monospace';
   ctx.fillText(`SCORE  ${score}`, 12, 24);
+  drawLives('#4af');
+}
+
+// Remaining-lives readout, shown top-right in both stages. Rendered as a row
+// of heart glyphs (filled = remaining, hollow = spent) so the count is legible
+// at a glance.
+function drawLives(color) {
+  ctx.save();
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'right';
+  const hearts = '\u2665 '.repeat(Math.max(0, lives)).trim();
+  ctx.fillStyle = color;
+  ctx.fillText(`LIVES  ${hearts}`, W - 12, 24);
+  ctx.restore();
 }
 
 // ─── Fade to Black ────────────────────────────────────────────────────────────
@@ -1608,6 +1690,8 @@ function loop(ts) {
     ctx.fillRect(0, 0, W, H);
 
     if (progress >= 1) {
+      // Reaching the rooftop unlocks stage 2 as the new respawn checkpoint.
+      highestStage = 2;
       initPlatformLevel();
       state = STATE.PLATFORM;
     }
@@ -1646,7 +1730,8 @@ function loop(ts) {
     drawFadeOverlay();
 
     if (fadeAlpha >= 1) {
-      state = STATE.GAME_OVER;
+      // Spend a life and respawn at the highest-reached stage, or game over.
+      handleDeath();
     }
 
   } else if (state === STATE.FADING) {
@@ -1660,9 +1745,10 @@ function loop(ts) {
     fadeAlpha = Math.min(1, fadeAlpha + fadeSpeed);
     drawFadeOverlay();
 
-    // Once fully black, switch to GAME_OVER
+    // Once fully black, spend a life and respawn at the highest-reached
+    // stage — or, if this was the last life, proceed to the game-over screen.
     if (fadeAlpha >= 1) {
-      state = STATE.GAME_OVER;
+      handleDeath();
     }
 
   } else if (state === STATE.GAME_OVER) {
