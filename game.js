@@ -180,10 +180,13 @@ const TURTLE_BOUNDS_PAD = 4;  // keep the turtle from crawling off the box edges
 
 function initObstacles() {
   const specs = [
-    { kind: 'turtle', w: 46, h: 24, xFrac: 0.16 },
-    { kind: 'block',  w: 32, h: 32, xFrac: 0.38 },
-    { kind: 'ball',   w: 34, h: 34, xFrac: 0.60 },
-    { kind: 'bear',   w: 36, h: 38, xFrac: 0.82 },
+    { kind: 'turtle',  w: 46, h: 24, xFrac: 0.09 },
+    { kind: 'block',   w: 32, h: 32, xFrac: 0.22 },
+    { kind: 'gorilla', w: 40, h: 40, xFrac: 0.35 },
+    { kind: 'ball',    w: 34, h: 34, xFrac: 0.48 },
+    { kind: 'giraffe', w: 34, h: 52, xFrac: 0.61 },
+    { kind: 'bear',    w: 36, h: 38, xFrac: 0.74 },
+    { kind: 'shark',   w: 48, h: 30, xFrac: 0.89 },
   ];
   obstacles = specs.map(s => ({
     kind: s.kind,
@@ -1439,6 +1442,88 @@ function drawObstacle(ob) {
     ctx.beginPath(); ctx.arc(cx - 5, cy - 2, 2, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(cx + 5, cy - 2, 2, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(cx, cy + 6, 2.5, 0, Math.PI * 2); ctx.fill();
+
+  } else if (ob.kind === 'gorilla') {
+    // Dark rounded body filling the box, sitting on the floor
+    ctx.fillStyle = '#4a4a4a';
+    ctx.beginPath();
+    ctx.ellipse(cx, ob.y + ob.h * 0.62, ob.w * 0.5, ob.h * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Rounded head
+    ctx.fillStyle = '#3d3d3d';
+    ctx.beginPath();
+    ctx.arc(cx, ob.y + ob.h * 0.28, ob.w * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    // Ears
+    ctx.beginPath(); ctx.arc(cx - ob.w * 0.34, ob.y + ob.h * 0.26, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + ob.w * 0.34, ob.y + ob.h * 0.26, 5, 0, Math.PI * 2); ctx.fill();
+    // Lighter face patch
+    ctx.fillStyle = '#7a6a5a';
+    ctx.beginPath();
+    ctx.ellipse(cx, ob.y + ob.h * 0.32, ob.w * 0.2, ob.h * 0.14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Eyes
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(cx - 4, ob.y + ob.h * 0.28, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 4, ob.y + ob.h * 0.28, 1.6, 0, Math.PI * 2); ctx.fill();
+
+  } else if (ob.kind === 'giraffe') {
+    // Tall body with a long neck, sitting on the floor
+    const bodyTop = ob.y + ob.h * 0.55;
+    // Legs/body block
+    ctx.fillStyle = '#e0b64a';
+    ctx.fillRect(ob.x + 4, bodyTop, ob.w - 8, ob.y + ob.h - bodyTop);
+    // Neck
+    ctx.fillRect(cx - 5, ob.y + ob.h * 0.16, 10, ob.h * 0.42);
+    // Head
+    ctx.beginPath();
+    ctx.ellipse(cx + 4, ob.y + ob.h * 0.14, 9, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Ossicones (horns)
+    ctx.strokeStyle = '#c99a30';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx, ob.y + ob.h * 0.10); ctx.lineTo(cx, ob.y + ob.h * 0.04); ctx.stroke();
+    // Brown spots
+    ctx.fillStyle = '#b5793a';
+    ctx.beginPath(); ctx.arc(ob.x + 10, bodyTop + 8, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ob.x + ob.w - 10, bodyTop + 6, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, bodyTop + 16, 3, 0, Math.PI * 2); ctx.fill();
+    // Eye
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(cx + 6, ob.y + ob.h * 0.13, 1.4, 0, Math.PI * 2); ctx.fill();
+
+  } else if (ob.kind === 'shark') {
+    // Grey body lying on the floor
+    ctx.fillStyle = '#6b8fa3';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, ob.w * 0.5, ob.h * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Tail fin at the left
+    ctx.beginPath();
+    ctx.moveTo(ob.x + 2, cy);
+    ctx.lineTo(ob.x - 6, cy - 10);
+    ctx.lineTo(ob.x - 6, cy + 10);
+    ctx.closePath();
+    ctx.fill();
+    // Dorsal fin on top
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, ob.y + 2);
+    ctx.lineTo(cx + 6, ob.y + 2);
+    ctx.lineTo(cx, ob.y - 8);
+    ctx.closePath();
+    ctx.fill();
+    // White belly
+    ctx.fillStyle = '#dfeaf0';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ob.h * 0.18, ob.w * 0.4, ob.h * 0.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(ob.x + ob.w - 10, cy - 3, 2, 0, Math.PI * 2); ctx.fill();
+    // Mouth (gill line of teeth)
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ob.x + ob.w - 16, cy + 4); ctx.lineTo(ob.x + ob.w - 2, cy + 4); ctx.stroke();
   }
 }
 
