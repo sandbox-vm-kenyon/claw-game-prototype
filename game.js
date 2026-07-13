@@ -58,7 +58,7 @@ let doorTouchElapsed;
 // ─── Platformer physics tuning ─────────────────────────────────────────────
 const MOVE_SPEED = 3.2;
 const GRAVITY = 0.6;
-const JUMP_VELOCITY = -11;
+const JUMP_VELOCITY = -14;
 const MAX_FALL_SPEED = 14;
 
 function init() {
