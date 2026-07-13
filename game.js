@@ -799,10 +799,18 @@ const MAX_PIT_W = 92;
 const HOVER_CLAW_Y = 70;              // altitude (px from top) the claw hovers/returns to
 const HOVER_PATROL_SPEED = 0.02;      // radians of drift per dt-unit while hovering
 const HOVER_PATROL_AMPLITUDE = 90;    // px either side of the current patrol center
-const HOVER_SWOOP_TRIGGER_RANGE = 70; // px — how close (in x) the bunny must be, moving right, to provoke a dive
+const HOVER_SWOOP_TRIGGER_RANGE = 150;// px ahead of the claw at which an approaching bunny provokes a dive (telegraphed early)
 const HOVER_SWOOP_ADVANCE = 120;      // px the claw's hover point shifts forward after each swoop
 const HOVER_SWOOP_DURATION = 34;      // dt-units for a full dive-and-rise arc (~0.55s)
 const HOVER_SWOOP_COOLDOWN = 50;      // dt-units of hovering required before it can dive again
+// The swoop dives to a FIXED, telegraphed depth (the jaw tips reach this world
+// y at the bottom of the arc) rather than homing onto the bunny's own position.
+// It is deliberately kept high enough above the ground that a bunny simply
+// running along the floor passes safely underneath — the swoop is a hazard to
+// react to (jump-timed / paced), NOT a guaranteed catch. Before this, the dive
+// targeted `player.y - 6` (ground level) and hugged the running bunny, so
+// merely walking right was an unavoidable game-over "for no reason".
+const HOVER_SWOOP_TIP_DEPTH = GROUND_Y - 120; // deepest the harmful jaw tips descend
 
 let hoverClaw;
 function initPlatformLevel() {
@@ -905,11 +913,18 @@ function updatePlatformLevel(dt) {
 
   updateHoverClaw(dt);
 
-  // Check if player has reached the exit door
+  // Check if player has reached the exit door. door.{x,y} is the door rect's
+  // top-left corner (y is the top, not the center), so overlap is tested by
+  // clamping the player's center into the door rect and comparing distance to
+  // the player radius. The previous check compared player.y - door.y against
+  // ±door.h/2 as if door.y were the center, which — with the door sitting on
+  // the ground and the bunny running along it — never registered a touch, so
+  // the exit door was effectively unreachable and the stage un-completable.
   if (door) {
-    const dx = player.x - door.x;
-    const dy = player.y - door.y;
-    if (dx >= -door.w / 2 && dx <= door.w / 2 && dy >= -door.h / 2 && dy <= door.h / 2) {
+    const cx = Math.max(door.x, Math.min(player.x, door.x + door.w));
+    const cy = Math.max(door.y, Math.min(player.y, door.y + door.h));
+    const dx = player.x - cx, dy = player.y - cy;
+    if (dx * dx + dy * dy <= player.r * player.r) {
       // Player touched the door — start the END_LEVEL sequence
       state = STATE.END_LEVEL;
       doorTouchElapsed = 0;
@@ -979,12 +994,19 @@ function updateHoverClaw(dt) {
   // offset, which made the claw dive at a point ~100-200px away from where
   // the bunny actually was and then catch them "for no reason" as they
   // walked into that spot.
-  if (c.cooldown <= 0 && player.vx > 0 && Math.abs(player.x - c.x) < HOVER_SWOOP_TRIGGER_RANGE) {
+  // Trigger only when the bunny is APPROACHING from the left (still behind the
+  // claw) and moving right, so the dive lands as a telegraphed arc ahead of the
+  // bunny that they can see coming and react to — rather than firing right on
+  // top of them and homing onto their position.
+  if (c.cooldown <= 0 && player.vx > 0 &&
+      player.x < c.x && (c.x - player.x) < HOVER_SWOOP_TRIGGER_RANGE) {
     c.swooping = true;
     c.swoopElapsed = 0;
     c.swoopStartX = c.x;
     c.swoopEndX = Math.max(40, Math.min(W * 4, c.x + HOVER_SWOOP_ADVANCE));
-    c.swoopDiveY = Math.min(player.y - 6, H - 40); // dive toward bunny's world-space y
+    // Fixed dive depth (jaw tips reach HOVER_SWOOP_TIP_DEPTH at the low point),
+    // never the ground — a bunny running along the floor clears underneath it.
+    c.swoopDiveY = HOVER_SWOOP_TIP_DEPTH - c.armLen;
   }
 
   // Check collision with player while hovering
