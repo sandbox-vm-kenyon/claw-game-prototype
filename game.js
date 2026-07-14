@@ -1556,8 +1556,7 @@ function drawFoldingEar(r, angFromTop, furColor, furShadow, innerEar) {
   // Rotate into the ear's mounting angle (relative to local "up").
   ctx.rotate(angFromTop);
 
-  // How much this ear should fold: it flops away from the ground. We measure
-  // the angle between the ear's own outward direction and the ground.
+  // Direction from the ear toward the ground, expressed in the ear's own frame.
   // In this ear-local frame the ear points "up" (local angle -PI/2), while the
   // direction toward the ground sits at (_earDownAngle - angFromTop). The ear
   // aims at the floor when those coincide, so offset the ground direction by
@@ -1567,10 +1566,21 @@ function drawFoldingEar(r, angFromTop, furColor, furShadow, innerEar) {
   const downAng = (_earDownAngle - angFromTop) + Math.PI / 2; // 0 => ear points straight down
   // Normalize to [-PI, PI]
   let d = Math.atan2(Math.sin(downAng), Math.cos(downAng));
-  // fold factor: 1 when the ear points at the ground, 0 when it points up/away.
+  // How far the (unfolded) ear tip reaches along the world-down axis, measured
+  // from the head centre: cos(d) is the fraction of the ear's length that points
+  // toward the ground (1 when the ear aims straight down, 0 when horizontal), so
+  // the tip's depth below the centre is earH * cos(d).
+  const tipDepth = earH * Math.max(0, Math.cos(d));
+  // The fold must NOT start when the ear merely becomes horizontal — at that
+  // point the tip is still level with the head centre, well above the ground.
+  // Only begin folding once the ear tip rotates down far enough to reach the
+  // BOTTOM edge of the round head (depth === r), and ramp to a full fold as the
+  // tip continues past that toward pointing straight down (depth === earH).
   // Suppressed entirely while airborne so mid-jump ears stay straight.
-  const nearGround = Math.max(0, Math.cos(d)); // 1 when pointing down
-  const fold = _earFoldActive ? nearGround * nearGround : 0; // ease-in the fold (grounded only)
+  const foldProgress = earH > r
+    ? Math.max(0, Math.min(1, (tipDepth - r) / (earH - r)))
+    : 0;
+  const fold = _earFoldActive ? foldProgress * foldProgress : 0; // ease-in the fold (grounded only)
 
   // Build the ear as a chain of segments; each successive segment bends toward
   // horizontal (away from the ground) proportionally to `fold`, so the tip
