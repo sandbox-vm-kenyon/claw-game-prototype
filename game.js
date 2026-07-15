@@ -1172,16 +1172,27 @@ function checkHoverClawCollision(c) {
   }
 }
 
-function drawHoverClaw(c) {
-  if (platformLevel >= 4) {
-    drawBatClaw(c);
-    return;
-  }
-  if (platformLevel >= 3) {
-    drawSnakeClaw(c);
-    return;
-  }
+// Per-level claw renderers. Each level's hover-claw look is a self-contained
+// function that draws over the claw's shared geometry (a body at (c.x, c.y)
+// and the two harmful jaw tips at clawTipLeft/Right(c), y = c.y + c.armLen).
+// The shared behavior/logic (updateHoverClaw, checkHoverClawCollision) is
+// geometry-based and untouched — only the visuals are isolated per level here.
+// PLATFORM_CLAWS maps each platform level to its own renderer; drawHoverClaw is
+// a single lookup into it, so adding/altering one level's claw touches only
+// that level's entry and function, never a shared cascade of level checks.
+const PLATFORM_CLAWS = {
+  2: drawRedHoverClaw,   // rooftop: mechanical red claw
+  3: drawSnakeClaw,      // jungle: snake-styled claw
+  4: drawBatClaw,        // cavern: bat-styled claw
+};
 
+function drawHoverClaw(c) {
+  const render = PLATFORM_CLAWS[platformLevel] || drawRedHoverClaw;
+  render(c);
+}
+
+// Level-2 (rooftop) hover claw — the default mechanical red claw.
+function drawRedHoverClaw(c) {
   // Body block — floats freely with no cable/arm running up off the top of
   // the screen, unlike the box's claw.
   ctx.fillStyle = '#c33';
