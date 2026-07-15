@@ -2147,31 +2147,37 @@ function drawIntro(dt) {
   const striking = t >= INTRO_FLY_IN && t < INTRO_FLY_IN + INTRO_STRIKE;
   const strikeT = striking ? (t - INTRO_FLY_IN) / INTRO_STRIKE : 0;
 
-  // Purple lightning strike from the UFO's underside down onto the machine.
+  // Pink lightning strike from the UFO's underside down onto the machine.
   if (striking) {
     const boltCount = 2 + (frame % 2);
     for (let b = 0; b < boltCount; b++) {
       const seed = frame * 3.1 + b * 7.7;
-      drawLightningBolt(ufoX, ufoY + 14, strikeX + (b - 0.5) * 10, strikeTopY, seed, 4, '#c98bff');
-      drawLightningBolt(ufoX, ufoY + 14, strikeX + (b - 0.5) * 10, strikeTopY, seed + 1.3, 2, '#f0d9ff');
+      drawLightningBolt(ufoX, ufoY + 14, strikeX + (b - 0.5) * 10, strikeTopY, seed, 4, '#ff4fd8');
+      drawLightningBolt(ufoX, ufoY + 14, strikeX + (b - 0.5) * 10, strikeTopY, seed + 1.3, 2, '#ffd9f4');
     }
     // Electric burst where the bolt hits the cabinet.
     const burstR = 10 + Math.sin(strikeT * Math.PI) * 26;
     const grad = ctx.createRadialGradient(strikeX, strikeTopY, 0, strikeX, strikeTopY, burstR);
-    grad.addColorStop(0, 'rgba(240,217,255,0.9)');
-    grad.addColorStop(0.5, 'rgba(162,89,255,0.5)');
-    grad.addColorStop(1, 'rgba(162,89,255,0)');
+    grad.addColorStop(0, 'rgba(255,217,244,0.9)');
+    grad.addColorStop(0.5, 'rgba(255,79,216,0.5)');
+    grad.addColorStop(1, 'rgba(255,79,216,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(strikeX, strikeTopY, burstR, 0, Math.PI * 2);
     ctx.fill();
-    // Full-screen purple flash that pulses with the strike.
+    // Full-screen pink flash that pulses with the strike.
     const flash = Math.sin(strikeT * Math.PI) * 0.35 * (frame % 3 === 0 ? 1.4 : 1);
-    ctx.fillStyle = `rgba(180,120,255,${flash})`;
+    ctx.fillStyle = `rgba(255,120,220,${flash})`;
     ctx.fillRect(0, 0, W, H);
   }
 
   drawUFO(ufoX, ufoY, tilt);
+
+  // During the strike, the flashing green-and-pink 'Claw Mashine' logo
+  // descends into view over the scene, in sync with the pink lightning.
+  if (striking) {
+    drawClawMashineLogo(dt, 128);
+  }
 
   // Title text glowing over the scene.
   ctx.textAlign = 'center';
@@ -2194,10 +2200,18 @@ function drawIntro(dt) {
 // Animated title logo reading 'Claw Mashine' (spelling intentional). It slowly
 // descends from above the top of the screen to a resting baseline and flashes,
 // alternating between green and pink each cycle.
-function drawClawMashineLogo(dt) {
-  // Slowly ease the logo down from offscreen to its resting baseline.
-  if (logoY < LOGO_REST_Y) {
-    logoY = Math.min(LOGO_REST_Y, logoY + LOGO_DESCEND_SPEED * dt);
+function drawClawMashineLogo(dt, baselineY) {
+  let y;
+  if (baselineY !== undefined) {
+    // Fixed baseline (used by the launch intro so the flashing logo sits at a
+    // set spot during the strike without colliding with the intro title).
+    y = baselineY;
+  } else {
+    // Slowly ease the logo down from offscreen to its resting baseline.
+    if (logoY < LOGO_REST_Y) {
+      logoY = Math.min(LOGO_REST_Y, logoY + LOGO_DESCEND_SPEED * dt);
+    }
+    y = logoY;
   }
 
   // Flash: alternate between green and pink on a smooth cycle.
@@ -2213,7 +2227,7 @@ function drawClawMashineLogo(dt) {
   ctx.fillStyle = color;
   ctx.shadowColor = glow;
   ctx.shadowBlur = 16;
-  ctx.fillText('Claw Mashine', W / 2, logoY);
+  ctx.fillText('Claw Mashine', W / 2, y);
   ctx.restore();
 }
 
