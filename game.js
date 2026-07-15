@@ -877,14 +877,13 @@ const HOVER_SWOOP_TRIGGER_RANGE = 150;// px ahead of the claw at which an approa
 const HOVER_SWOOP_ADVANCE = 120;      // px the claw's hover point shifts forward after each swoop
 const HOVER_SWOOP_DURATION = 60;      // dt-units for a full dive-and-rise arc (~1.0s; slowed from 34 so the swoop is easier to dodge)
 const HOVER_SWOOP_COOLDOWN = 50;      // dt-units of hovering required before it can dive again
-// The swoop dives to a FIXED, telegraphed depth (the jaw tips reach this world
-// y at the bottom of the arc) rather than homing onto the bunny's own position.
-// It is deliberately kept high enough above the ground that a bunny simply
-// running along the floor passes safely underneath — the swoop is a hazard to
-// react to (jump-timed / paced), NOT a guaranteed catch. Before this, the dive
-// targeted `player.y - 6` (ground level) and hugged the running bunny, so
-// merely walking right was an unavoidable game-over "for no reason".
-const HOVER_SWOOP_TIP_DEPTH = GROUND_Y - 120; // deepest the harmful jaw tips descend
+// The swoop snapshots the bunny's position (x AND y) at the instant it
+// triggers and dives toward THAT captured point: the arc's low point aims the
+// harmful jaw tips at the player's y as it was when the swoop began. The dive
+// depth is clamped just above the ground so the tips never punch through the
+// floor. The snapshot is frozen at swoop-start, so if the player moves during
+// the ~1s arc the claw still commits to where they were — a telegraphed,
+// dodgeable dive rather than a stale/fixed-depth or homing catch.
 const HOVER_CLAW_MIN_ONSCREEN_X = 40; // px inset from the screen's left edge the claw's body is never allowed to fall behind (keeps it on-screen behind the player)
 const HOVER_CLAW_MAX_X = NUM_CHUNKS * CHUNK_W; // world x the claw may range up to (full stage width; the old W*4 cap pinned it ~1920px in and broke tracking deeper into the level)
 
@@ -1023,7 +1022,7 @@ function initHoverClaw() {
     patrolCenter: 300, patrolT: 0,
     armLen: 14, jawOpen: 18,
     swooping: false, swoopElapsed: 0, cooldown: 0,
-    swoopStartX: 0, swoopEndX: 0, swoopDiveY: 0,
+    swoopStartX: 0, swoopEndX: 0, swoopDiveY: 0, swoopTargetY: 0,
   };
 }
 
@@ -1102,16 +1101,23 @@ function updateHoverClaw(dt) {
     c.swooping = true;
     c.swoopElapsed = 0;
     c.swoopStartX = c.x;
-    // Aim the dive at the bunny's CURRENT location at the moment the swoop
-    // begins: the arc's lowest point (t=0.5) sits over where the player is now,
-    // so the claw descends toward the bunny rather than a stale/fixed point.
-    // The horizontal sweep continues past that point so the claw rises back up
-    // ahead of the player (still advancing forward as before).
+    // Snapshot the bunny's position (x AND y) at the exact instant the swoop
+    // begins, then aim the whole arc at that captured point so the claw
+    // actually descends toward where the player was at swoop-start — not a
+    // fixed depth or a stale/mistargeted point. The snapshot is frozen here:
+    // if the player moves during the ~1s dive, the arc still homes on the
+    // spot they occupied when the swoop triggered.
     const targetX = player.x;
+    const targetY = player.y;
+    c.swoopTargetY = targetY;
+    // Horizontal: the arc's lowest point (t=0.5) sits over the captured x, and
+    // the sweep continues past it so the claw rises back up ahead of the player.
     c.swoopEndX = Math.max(40, Math.min(HOVER_CLAW_MAX_X, 2 * targetX - c.swoopStartX));
-    // Fixed dive depth (jaw tips reach HOVER_SWOOP_TIP_DEPTH at the low point),
-    // never the ground — a bunny running along the floor clears underneath it.
-    c.swoopDiveY = HOVER_SWOOP_TIP_DEPTH - c.armLen;
+    // Vertical: dive so the harmful jaw tips (c.y + c.armLen) reach the captured
+    // player y at the arc's low point, making the claw swoop down to where the
+    // bunny actually was. Clamp so the tips never punch below the ground.
+    const maxTipY = Math.min(player.y, GROUND_Y - 4);
+    c.swoopDiveY = maxTipY - c.armLen;
   }
 
   // Check collision with player while hovering
