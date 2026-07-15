@@ -58,12 +58,16 @@ let doorTouchElapsed;
 // ─── Platformer physics tuning ─────────────────────────────────────────────
 const MOVE_SPEED = 3.2;
 const GRAVITY = 0.6;
-const JUMP_VELOCITY = -14;
+// Vertical jump height was raised 20%. Peak height ∝ JUMP_VELOCITY²/(2·GRAVITY),
+// so scaling the launch velocity by √1.20 (−14 → −15.336) raises the apex by
+// exactly 20% while leaving GRAVITY (and thus fall feel) unchanged.
+const JUMP_VELOCITY = -15.336231610144651; // = -14 * Math.sqrt(1.20)
 const MAX_FALL_SPEED = 14;
-// Airborne horizontal boost: while jumping, the bunny covers 20% more
-// horizontal ground per frame than while grounded, so a full running jump
-// lands ~20% farther without changing jump height (airtime is unchanged).
-const AIR_HORIZONTAL_BOOST = 1.2;
+// Airborne horizontal boost: while jumping, the bunny covers more horizontal
+// ground per frame than while grounded. Raised from 1.2 to 1.92 (×1.60) so a
+// full running jump now lands 60% farther without changing jump height (airtime
+// is unchanged, so the extra distance comes purely from faster airborne travel).
+const AIR_HORIZONTAL_BOOST = 1.92;
 
 function init() {
   // Fresh game start / Play Again: refill the life pool and reset the
@@ -863,8 +867,8 @@ function makeRng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-// Max horizontal reach of a full jump is ~138px (JUMP_VELOCITY/GRAVITY/MOVE_SPEED
-// with the 20% airborne horizontal boost); cap generated pit widths well inside
+// Max horizontal reach of a full jump is ~220px (JUMP_VELOCITY/GRAVITY/MOVE_SPEED
+// with the 1.92× airborne horizontal boost); cap generated pit widths well inside
 // that so every pit is comfortably clearable and no chunk is an impossible dead-end.
 const MAX_PIT_W = 92;
 
