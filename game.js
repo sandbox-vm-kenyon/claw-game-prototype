@@ -39,6 +39,14 @@ let lives, highestStage;
 // climbs up to that height — the item/bunny falls back rather than being
 // hauled off.
 let grabFadeAlpha, grabFadeClaw;
+
+// Decorative 'Claw Mashine' logo that slowly descends from the top of the
+// screen while flashing between green and pink. logoY is its current baseline
+// y (world = screen space); it starts above the top edge and eases downward.
+let logoY;
+const LOGO_START_Y = -30;      // begins fully offscreen above the top edge
+const LOGO_REST_Y = 40;        // eases down to this resting baseline
+const LOGO_DESCEND_SPEED = 0.25; // px per ~60fps-unit — slow drift downward
 const DROP_CHANCE = 0.5; // odds a grab is let go mid-retract instead of held all the way up
 
 // Pop-out transition (riding a retracting claw all the way to the box's
@@ -84,6 +92,8 @@ function init() {
 
   grabFadeAlpha = 0;
   grabFadeClaw = null;
+
+  logoY = LOGO_START_Y;
 
   if (btnPlayAgain) btnPlayAgain.classList.remove('visible');
 
@@ -2179,6 +2189,34 @@ function drawIntro(dt) {
   }
 }
 
+// ─── 'Claw Mashine' logo ──────────────────────────────────────────────────────
+
+// Animated title logo reading 'Claw Mashine' (spelling intentional). It slowly
+// descends from above the top of the screen to a resting baseline and flashes,
+// alternating between green and pink each cycle.
+function drawClawMashineLogo(dt) {
+  // Slowly ease the logo down from offscreen to its resting baseline.
+  if (logoY < LOGO_REST_Y) {
+    logoY = Math.min(LOGO_REST_Y, logoY + LOGO_DESCEND_SPEED * dt);
+  }
+
+  // Flash: alternate between green and pink on a smooth cycle.
+  const t = (Math.sin(frame * 0.12) + 1) / 2; // 0..1 oscillation
+  const green = '#39ff5e';
+  const pink = '#ff4fd8';
+  const color = t < 0.5 ? green : pink;
+  const glow = t < 0.5 ? pink : green;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 32px "Segoe UI", Arial, sans-serif';
+  ctx.fillStyle = color;
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = 16;
+  ctx.fillText('Claw Mashine', W / 2, logoY);
+  ctx.restore();
+}
+
 // ─── Main Loop ────────────────────────────────────────────────────────────────
 
 let lastTime = 0;
@@ -2230,6 +2268,7 @@ function loop(ts) {
     drawClaws();
     drawPlayer(player);
     drawHUD();
+    drawClawMashineLogo(dt);
 
     // Merely touching the claw's fingers is no longer fatal on its own — the
     // bunny only dies if she's actually grabbed (see playerGrabAligned in
