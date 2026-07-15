@@ -1600,6 +1600,67 @@ function drawDoor(d) {
   ctx.beginPath();
   ctx.arc(d.x + d.w / 2 - 8, d.y + d.h / 2, 3, 0, Math.PI * 2);
   ctx.fill();
+
+  // Jungle vines framing the level-1 exit door, matching the hanging-vine
+  // styling used in the jungle level's backdrop.
+  drawDoorVines(d);
+}
+
+// Hanging/climbing green jungle vines that frame the wooden exit door, giving
+// it a jungle-vine motif. Drawn in the same flat curved-stroke-with-leaf style
+// as drawJungleBackground's canopy vines: a couple of vines drape down each
+// side of the door frame and one swags across the top, each dotted with leaves.
+function drawDoorVines(d) {
+  const left = d.x - d.w / 2;
+  const right = d.x + d.w / 2;
+  const top = d.y;
+  const bottom = d.y + d.h;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(30,90,40,0.85)';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+
+  // A small leaf at (x, y), oriented by angle — same look as the backdrop vines.
+  const leaf = (x, y, angle) => {
+    ctx.fillStyle = 'rgba(40,120,55,0.85)';
+    ctx.beginPath();
+    ctx.ellipse(x, y, 4, 8, angle, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  // Vines climbing down each side post of the door frame, gently swaying.
+  const sides = [left - 2, right + 2];
+  for (let s = 0; s < sides.length; s++) {
+    const x = sides[s];
+    const dir = s === 0 ? -1 : 1;   // sway outward from the frame
+    const sway = Math.sin(Date.now() / 900 + s * 1.7) * 4;
+    ctx.strokeStyle = 'rgba(30,90,40,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(x, top - 6);
+    ctx.quadraticCurveTo(x + dir * (5 + sway), top + d.h * 0.4,
+                         x + dir * 2 + sway, bottom - 4);
+    ctx.stroke();
+    // Leaves sprouting along the side vine.
+    for (let t = 0.25; t <= 0.9; t += 0.32) {
+      const ly = top - 6 + (bottom - 4 - (top - 6)) * t;
+      leaf(x + dir * (3 + sway * t), ly, 0.5 * dir);
+    }
+  }
+
+  // A vine swagging across the top of the door frame, dipping in the middle.
+  const swagDip = Math.sin(Date.now() / 1100) * 3;
+  ctx.strokeStyle = 'rgba(30,90,40,0.85)';
+  ctx.beginPath();
+  ctx.moveTo(left - 2, top - 6);
+  ctx.quadraticCurveTo(d.x, top + 8 + swagDip, right + 2, top - 6);
+  ctx.stroke();
+  // Leaves hanging from the top swag.
+  leaf(d.x, top + 8 + swagDip, 0);
+  leaf(left + d.w * 0.28, top + 2 + swagDip * 0.6, -0.4);
+  leaf(right - d.w * 0.28, top + 2 + swagDip * 0.6, 0.4);
+
+  ctx.restore();
 }
 
 // Cave-mouth exit for the jungle level: a mossy rock mound with a dark,
