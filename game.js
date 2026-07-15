@@ -26,6 +26,10 @@ let runStartTime;
 // reset to the full pool on a fresh game start / Play Again.
 const START_LIVES = 5;
 let lives, highestStage;
+// Which platform stage is currently running: 2 = the rooftop/arcade platform
+// level, 3 = the jungle level (same platforming machinery, but a jungle
+// backdrop and a snake-styled hover claw). Set by initPlatformLevel().
+let platformLevel = 2;
 
 // Grab-and-carry: when the claw comes to a stop fully aligned (in x) over a
 // crate/turtle/ball, it grabs that item and hauls it up with the retract.
@@ -906,7 +910,11 @@ const HOVER_CLAW_MIN_ONSCREEN_X = 40; // px inset from the screen's left edge th
 const HOVER_CLAW_MAX_X = NUM_CHUNKS * CHUNK_W; // world x the claw may range up to (full stage width; the old W*4 cap pinned it ~1920px in and broke tracking deeper into the level)
 
 let hoverClaw;
-function initPlatformLevel() {
+// level defaults to whatever platform stage is already running (so a plain
+// respawn stays on the same stage); callers advancing the player pass the
+// explicit stage number (2 = rooftop, 3 = jungle).
+function initPlatformLevel(level = platformLevel) {
+  platformLevel = level;
   groundSegments = [];
   stagePlatforms = [];
   enemies = [];
@@ -1164,6 +1172,11 @@ function checkHoverClawCollision(c) {
 }
 
 function drawHoverClaw(c) {
+  if (platformLevel >= 3) {
+    drawSnakeClaw(c);
+    return;
+  }
+
   // Body block — floats freely with no cable/arm running up off the top of
   // the screen, unlike the box's claw.
   ctx.fillStyle = '#c33';
@@ -1185,7 +1198,81 @@ function drawHoverClaw(c) {
   ctx.beginPath(); ctx.arc(clawTipRight(c), tipY, 4, 0, Math.PI * 2); ctx.fill();
 }
 
+// Level-3 hazard drawn as a snake instead of the mechanical claw. It occupies
+// exactly the same geometry the claw does — a head at (c.x, c.y) with the two
+// harmful jaw tips at clawTipLeft/Right(c) and y = c.y + c.armLen — so the
+// existing collision (checkHoverClawCollision) is unchanged; only the look
+// differs. The snake's body coils up above the head (in place of the claw's
+// body block) and its two open fangs sit right where the claw's jaw tips are.
+function drawSnakeClaw(c) {
+  const tipY = c.y + c.armLen;
+  const wriggle = Math.sin(Date.now() / 180) * 5;
+
+  // Coiled green body rising up above the head, in place of the claw's block.
+  ctx.strokeStyle = '#2f9e44';
+  ctx.lineWidth = 9;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(c.x + wriggle, c.y - 40);
+  ctx.quadraticCurveTo(c.x - 12 + wriggle, c.y - 26, c.x + 6, c.y - 14);
+  ctx.quadraticCurveTo(c.x + 16, c.y - 6, c.x, c.y);
+  ctx.stroke();
+  // Belly highlight along the body.
+  ctx.strokeStyle = '#69db7c';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(c.x + wriggle, c.y - 40);
+  ctx.quadraticCurveTo(c.x - 12 + wriggle, c.y - 26, c.x + 6, c.y - 14);
+  ctx.quadraticCurveTo(c.x + 16, c.y - 6, c.x, c.y);
+  ctx.stroke();
+
+  // Snake head (an ellipse) centered where the claw body sat.
+  ctx.fillStyle = '#37b24d';
+  ctx.beginPath();
+  ctx.ellipse(c.x, c.y, 13, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2b8a3e';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Eyes.
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(c.x - 5, c.y - 3, 2.6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(c.x + 5, c.y - 3, 2.6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(c.x - 5, c.y - 3, 1.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(c.x + 5, c.y - 3, 1.2, 0, Math.PI * 2); ctx.fill();
+
+  // Two fangs striking down to exactly the jaw-tip hit points.
+  const left = clawTipLeft(c), right = clawTipRight(c);
+  ctx.strokeStyle = '#2b8a3e';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(c.x - 4, c.y + 6); ctx.lineTo(left, tipY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(c.x + 4, c.y + 6); ctx.lineTo(right, tipY); ctx.stroke();
+  ctx.fillStyle = '#f8f9fa';
+  ctx.beginPath(); ctx.arc(left, tipY, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(right, tipY, 3.5, 0, Math.PI * 2); ctx.fill();
+
+  // Flicking forked tongue between the fangs.
+  const tongueLen = 8 + Math.sin(Date.now() / 120) * 3;
+  ctx.strokeStyle = '#e03131';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(c.x, c.y + 8);
+  ctx.lineTo(c.x, c.y + 8 + tongueLen);
+  ctx.moveTo(c.x, c.y + 8 + tongueLen);
+  ctx.lineTo(c.x - 3, c.y + 12 + tongueLen);
+  ctx.moveTo(c.x, c.y + 8 + tongueLen);
+  ctx.lineTo(c.x + 3, c.y + 12 + tongueLen);
+  ctx.stroke();
+}
+
 function drawPlatformBackground() {
+  if (platformLevel >= 3) {
+    drawJungleBackground();
+    return;
+  }
+
   // Indoor arcade backdrop — a dim, windowless wall, matching the arcade
   // theme the bunny popped out into.
   const grd = ctx.createLinearGradient(0, 0, 0, H);
@@ -1201,6 +1288,66 @@ function drawPlatformBackground() {
   drawNeonGlow(90, 90);
   ctx.fillStyle = 'rgba(60,220,255,0.3)';
   drawNeonGlow(260, 140);
+}
+
+// Jungle backdrop for level 3: a green sky-to-canopy gradient, a warm sun, a
+// silhouette of layered foliage across the back, and a few hanging vines —
+// drawn in the same flat, canvas-shape style as the rest of the game's scenery.
+function drawJungleBackground() {
+  const grd = ctx.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, '#123d1f');   // deep canopy green up top
+  grd.addColorStop(0.55, '#1f5e30');
+  grd.addColorStop(1, '#2f7d3f');   // brighter forest floor light below
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  // Hazy sun glow filtering through the canopy.
+  const sun = ctx.createRadialGradient(W - 70, 60, 0, W - 70, 60, 90);
+  sun.addColorStop(0, 'rgba(255,240,170,0.6)');
+  sun.addColorStop(1, 'rgba(255,240,170,0)');
+  ctx.fillStyle = sun;
+  ctx.beginPath();
+  ctx.arc(W - 70, 60, 90, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Layered foliage silhouettes across the background (two depth layers).
+  drawJungleFoliage(H * 0.62, '#0e3a1c', 46, 0);
+  drawJungleFoliage(H * 0.74, '#15522a', 62, 30);
+
+  // A few hanging vines drifting down from the canopy.
+  ctx.strokeStyle = 'rgba(30,90,40,0.7)';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  const vineXs = [70, 190, 300, 400];
+  for (let i = 0; i < vineXs.length; i++) {
+    const x = vineXs[i];
+    const len = 90 + (i % 3) * 40;
+    const sway = Math.sin(Date.now() / 900 + i) * 8;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.quadraticCurveTo(x + sway, len / 2, x + sway * 1.5, len);
+    ctx.stroke();
+    // A leaf at the vine's tip.
+    ctx.fillStyle = 'rgba(40,120,55,0.8)';
+    ctx.beginPath();
+    ctx.ellipse(x + sway * 1.5, len, 5, 9, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// A row of overlapping rounded bumps forming a bushy foliage silhouette at a
+// given baseline y, in the given color (used for back-layer jungle scenery).
+function drawJungleFoliage(baseY, color, bumpR, offset) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let x = -bumpR + offset; x < W + bumpR; x += bumpR * 1.3) {
+    const h = bumpR + (x * 0.7 % (bumpR * 0.6));
+    ctx.arc(x, baseY, h, Math.PI, 0, false);
+  }
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawCeilingLight(cx, cy) {
@@ -1227,19 +1374,27 @@ function drawPlatformWorld() {
   ctx.save();
   ctx.translate(-cameraX, 0);
 
+  const jungle = platformLevel >= 3;
+  // Jungle level: earthy soil ground topped with grass; back to the grey
+  // arcade concrete otherwise.
+  const groundBody = jungle ? '#6b4a2b' : '#8f8f96';
+  const groundTop  = jungle ? '#3fa34d' : '#b7b7be';
+  const platBody   = jungle ? '#4d3620' : '#5a5f6b';
+  const platTop    = jungle ? '#5cc46a' : '#4be0ff';
+
   for (const seg of groundSegments) {
     if (seg.x + seg.w < cameraX - 20 || seg.x > cameraX + W + 20) continue;
-    ctx.fillStyle = '#8f8f96';
+    ctx.fillStyle = groundBody;
     ctx.fillRect(seg.x, seg.y, seg.w, seg.h);
-    ctx.fillStyle = '#b7b7be';
+    ctx.fillStyle = groundTop;
     ctx.fillRect(seg.x, seg.y, seg.w, 5);
   }
 
   for (const plat of stagePlatforms) {
     if (plat.x + plat.w < cameraX - 20 || plat.x > cameraX + W + 20) continue;
-    ctx.fillStyle = '#5a5f6b';
+    ctx.fillStyle = platBody;
     ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-    ctx.fillStyle = '#4be0ff';
+    ctx.fillStyle = platTop;
     ctx.fillRect(plat.x, plat.y, plat.w, 3);
   }
 
@@ -1287,13 +1442,14 @@ function drawDoor(d) {
 }
 
 function drawPlatformHUD() {
-  ctx.fillStyle = '#2a2a2a';
+  const jungle = platformLevel >= 3;
+  ctx.fillStyle = jungle ? '#e8ffe8' : '#2a2a2a';
   ctx.font = 'bold 16px monospace';
   ctx.fillText(`SCORE  ${score}`, 12, 24);
   ctx.font = 'bold 13px monospace';
-  ctx.fillStyle = '#3a3a3a';
-  ctx.fillText('OUT OF THE MACHINE!', 12, 44);
-  drawLives('#2a2a2a');
+  ctx.fillStyle = jungle ? '#bff0bf' : '#3a3a3a';
+  ctx.fillText(jungle ? 'LEVEL 3 — JUNGLE!' : 'OUT OF THE MACHINE!', 12, 44);
+  drawLives(jungle ? '#e8ffe8' : '#2a2a2a');
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -2362,7 +2518,7 @@ function loop(ts) {
     if (progress >= 1) {
       // Reaching the rooftop unlocks stage 2 as the new respawn checkpoint.
       highestStage = 2;
-      initPlatformLevel();
+      initPlatformLevel(2);
       state = STATE.PLATFORM;
     }
 
@@ -2385,10 +2541,18 @@ function loop(ts) {
     ctx.fillRect(0, 0, W, H);
 
     if (doorProgress >= 1) {
-      // Level complete — show a brief message before returning to the main game
-      // or could trigger next stage/end screen here
-      state = STATE.GAME_OVER;
-      gameOverAlpha = 0;
+      if (platformLevel < 3) {
+        // Clearing the rooftop platform level (stage 2) leads into the jungle
+        // level (stage 3): re-init the platforming machinery for level 3, which
+        // renders a jungle backdrop and a snake-styled claw.
+        highestStage = 3;
+        initPlatformLevel(3);
+        state = STATE.PLATFORM;
+      } else {
+        // Level 3 (jungle) cleared — the run is complete.
+        state = STATE.GAME_OVER;
+        gameOverAlpha = 0;
+      }
     }
 
   } else if (state === STATE.PLATFORM_FADING) {
