@@ -28,7 +28,8 @@ const START_LIVES = 5;
 let lives, highestStage;
 // Which platform stage is currently running: 2 = the rooftop/arcade platform
 // level, 3 = the jungle level (same platforming machinery, but a jungle
-// backdrop and a snake-styled hover claw). Set by initPlatformLevel().
+// backdrop and a snake-styled hover claw), 4 = the cavern level (a cave
+// backdrop and a bat-styled hover claw). Set by initPlatformLevel().
 let platformLevel = 2;
 
 // Grab-and-carry: when the claw comes to a stop fully aligned (in x) over a
@@ -1172,6 +1173,10 @@ function checkHoverClawCollision(c) {
 }
 
 function drawHoverClaw(c) {
+  if (platformLevel >= 4) {
+    drawBatClaw(c);
+    return;
+  }
   if (platformLevel >= 3) {
     drawSnakeClaw(c);
     return;
@@ -1267,7 +1272,87 @@ function drawSnakeClaw(c) {
   ctx.stroke();
 }
 
+// Level-4 hazard drawn as a bat instead of the mechanical claw. Like the snake
+// claw it occupies exactly the same geometry the claw does — a body at
+// (c.x, c.y) with the two harmful clawed feet at clawTipLeft/Right(c) and
+// y = c.y + c.armLen — so the existing collision (checkHoverClawCollision) is
+// unchanged; only the look differs. Flapping membranous wings spread out from
+// the furry body, and the two grabbing talons hang down to the jaw-tip points.
+function drawBatClaw(c) {
+  const tipY = c.y + c.armLen;
+  const flap = Math.sin(Date.now() / 120) * 8;   // wing beat
+
+  // Two membranous wings sweeping out from the body, flapping up and down.
+  ctx.fillStyle = '#3b2a4a';
+  ctx.strokeStyle = '#5a4570';
+  ctx.lineWidth = 1.5;
+  for (const dir of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(c.x + dir * 6, c.y - 2);
+    // outer wing tip, rising/falling with the flap
+    ctx.quadraticCurveTo(c.x + dir * 26, c.y - 16 - flap, c.x + dir * 34, c.y - 4 - flap);
+    // scalloped trailing edge back toward the body
+    ctx.quadraticCurveTo(c.x + dir * 26, c.y - 2 - flap * 0.4, c.x + dir * 22, c.y + 6);
+    ctx.quadraticCurveTo(c.x + dir * 16, c.y + 2, c.x + dir * 12, c.y + 8);
+    ctx.quadraticCurveTo(c.x + dir * 9, c.y + 3, c.x + dir * 6, c.y + 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Furry round body where the claw block sat.
+  ctx.fillStyle = '#4a3560';
+  ctx.beginPath();
+  ctx.ellipse(c.x, c.y, 11, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2e2040';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Two pointed ears on top.
+  ctx.fillStyle = '#4a3560';
+  ctx.beginPath();
+  ctx.moveTo(c.x - 8, c.y - 8); ctx.lineTo(c.x - 11, c.y - 18); ctx.lineTo(c.x - 3, c.y - 11);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(c.x + 8, c.y - 8); ctx.lineTo(c.x + 11, c.y - 18); ctx.lineTo(c.x + 3, c.y - 11);
+  ctx.closePath(); ctx.fill();
+
+  // Glowing eyes.
+  ctx.fillStyle = '#ffd43b';
+  ctx.beginPath(); ctx.arc(c.x - 4, c.y - 2, 2.4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(c.x + 4, c.y - 2, 2.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(c.x - 4, c.y - 2, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(c.x + 4, c.y - 2, 1, 0, Math.PI * 2); ctx.fill();
+
+  // Two little fangs under the snout.
+  ctx.fillStyle = '#f8f9fa';
+  ctx.beginPath();
+  ctx.moveTo(c.x - 3, c.y + 6); ctx.lineTo(c.x - 1.5, c.y + 10); ctx.lineTo(c.x, c.y + 6);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(c.x + 3, c.y + 6); ctx.lineTo(c.x + 1.5, c.y + 10); ctx.lineTo(c.x, c.y + 6);
+  ctx.closePath(); ctx.fill();
+
+  // Two grabbing talons reaching down to exactly the jaw-tip hit points.
+  const left = clawTipLeft(c), right = clawTipRight(c);
+  ctx.strokeStyle = '#2e2040';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(c.x - 4, c.y + 8); ctx.lineTo(left, tipY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(c.x + 4, c.y + 8); ctx.lineTo(right, tipY); ctx.stroke();
+  // Curved claws at the tips.
+  ctx.fillStyle = '#1b1329';
+  ctx.beginPath(); ctx.arc(left, tipY, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(right, tipY, 3.5, 0, Math.PI * 2); ctx.fill();
+}
+
 function drawPlatformBackground() {
+  if (platformLevel >= 4) {
+    drawCavernBackground();
+    return;
+  }
   if (platformLevel >= 3) {
     drawJungleBackground();
     return;
@@ -1350,6 +1435,73 @@ function drawJungleFoliage(baseY, color, bumpR, offset) {
   ctx.fill();
 }
 
+// Cavern backdrop for level 4: a dark rocky gradient, hanging stalactites from
+// the ceiling and stalagmites rising from below, a faint glow, and a few small
+// bats fluttering in the gloom — drawn in the same flat canvas-shape style as
+// the rest of the game's scenery.
+function drawCavernBackground() {
+  const grd = ctx.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, '#0c0a14');    // near-black cavern ceiling
+  grd.addColorStop(0.55, '#1a1626');
+  grd.addColorStop(1, '#2a2338');    // faintly lit cave floor
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  // Dim glow from some unseen source deep in the cave.
+  const glow = ctx.createRadialGradient(W * 0.5, H * 0.72, 0, W * 0.5, H * 0.72, 160);
+  glow.addColorStop(0, 'rgba(90,120,160,0.18)');
+  glow.addColorStop(1, 'rgba(90,120,160,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stalactites hanging from the ceiling.
+  ctx.fillStyle = '#241d33';
+  const topXs = [40, 110, 180, 250, 330, 420];
+  for (let i = 0; i < topXs.length; i++) {
+    const x = topXs[i];
+    const w = 16 + (i % 3) * 6;
+    const len = 40 + (i * 37 % 60);
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, 0);
+    ctx.lineTo(x + w / 2, 0);
+    ctx.lineTo(x, len);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Stalagmites rising from the cave floor at the back.
+  ctx.fillStyle = '#2f2740';
+  const botXs = [70, 150, 300, 380];
+  for (let i = 0; i < botXs.length; i++) {
+    const x = botXs[i];
+    const w = 20 + (i % 2) * 10;
+    const len = 50 + (i * 29 % 50);
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, H);
+    ctx.lineTo(x + w / 2, H);
+    ctx.lineTo(x, H - len);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // A few small bats fluttering in the background.
+  ctx.fillStyle = 'rgba(10,8,16,0.9)';
+  const batBase = [[90, 90], [250, 60], [360, 120]];
+  for (let i = 0; i < batBase.length; i++) {
+    const bx = batBase[i][0] + Math.sin(Date.now() / 700 + i * 2) * 18;
+    const by = batBase[i][1] + Math.cos(Date.now() / 900 + i) * 10;
+    const w = Math.sin(Date.now() / 100 + i) * 4;   // wing flap
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(bx - 7, by - 5 - w, bx - 11, by - w);
+    ctx.quadraticCurveTo(bx - 6, by + 1, bx, by + 2);
+    ctx.quadraticCurveTo(bx + 6, by + 1, bx + 11, by - w);
+    ctx.quadraticCurveTo(bx + 7, by - 5 - w, bx, by);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 function drawCeilingLight(cx, cy) {
   ctx.beginPath();
   ctx.arc(cx, cy, 22, 0, Math.PI * 2);
@@ -1374,13 +1526,15 @@ function drawPlatformWorld() {
   ctx.save();
   ctx.translate(-cameraX, 0);
 
-  const jungle = platformLevel >= 3;
-  // Jungle level: earthy soil ground topped with grass; back to the grey
-  // arcade concrete otherwise.
-  const groundBody = jungle ? '#6b4a2b' : '#8f8f96';
-  const groundTop  = jungle ? '#3fa34d' : '#b7b7be';
-  const platBody   = jungle ? '#4d3620' : '#5a5f6b';
-  const platTop    = jungle ? '#5cc46a' : '#4be0ff';
+  const cavern = platformLevel >= 4;
+  const jungle = platformLevel === 3;
+  // Cavern level: dark rock ground with a pale mineral crust and glowing
+  // crystal-topped platforms; jungle level: earthy soil topped with grass;
+  // otherwise back to the grey arcade concrete.
+  const groundBody = cavern ? '#3a3348' : jungle ? '#6b4a2b' : '#8f8f96';
+  const groundTop  = cavern ? '#6f6480' : jungle ? '#3fa34d' : '#b7b7be';
+  const platBody   = cavern ? '#2c2640' : jungle ? '#4d3620' : '#5a5f6b';
+  const platTop    = cavern ? '#9d7bff' : jungle ? '#5cc46a' : '#4be0ff';
 
   for (const seg of groundSegments) {
     if (seg.x + seg.w < cameraX - 20 || seg.x > cameraX + W + 20) continue;
@@ -1512,14 +1666,19 @@ function drawCave(d) {
 }
 
 function drawPlatformHUD() {
-  const jungle = platformLevel >= 3;
-  ctx.fillStyle = jungle ? '#e8ffe8' : '#2a2a2a';
+  const cavern = platformLevel >= 4;
+  const jungle = platformLevel === 3;
+  const dark = cavern || jungle;  // both use light-on-dark HUD text
+  const primary = cavern ? '#e8e0ff' : jungle ? '#e8ffe8' : '#2a2a2a';
+  const secondary = cavern ? '#c9b8ff' : jungle ? '#bff0bf' : '#3a3a3a';
+  ctx.fillStyle = primary;
   ctx.font = 'bold 16px monospace';
   ctx.fillText(`SCORE  ${score}`, 12, 24);
   ctx.font = 'bold 13px monospace';
-  ctx.fillStyle = jungle ? '#bff0bf' : '#3a3a3a';
-  ctx.fillText(jungle ? 'LEVEL 3 — JUNGLE!' : 'OUT OF THE MACHINE!', 12, 44);
-  drawLives(jungle ? '#e8ffe8' : '#2a2a2a');
+  ctx.fillStyle = secondary;
+  const label = cavern ? 'LEVEL 4 — CAVERN!' : jungle ? 'LEVEL 3 — JUNGLE!' : 'OUT OF THE MACHINE!';
+  ctx.fillText(label, 12, 44);
+  drawLives(dark ? primary : '#2a2a2a');
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -2618,8 +2777,15 @@ function loop(ts) {
         highestStage = 3;
         initPlatformLevel(3);
         state = STATE.PLATFORM;
+      } else if (platformLevel < 4) {
+        // Clearing the jungle level (stage 3) leads into the cavern level
+        // (stage 4): re-init the platforming machinery for level 4, which
+        // renders a cavern backdrop and a bat-styled claw.
+        highestStage = 4;
+        initPlatformLevel(4);
+        state = STATE.PLATFORM;
       } else {
-        // Level 3 (jungle) cleared — the run is complete.
+        // Level 4 (cavern) cleared — the run is complete.
         state = STATE.GAME_OVER;
         gameOverAlpha = 0;
       }
