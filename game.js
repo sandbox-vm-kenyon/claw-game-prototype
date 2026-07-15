@@ -9,7 +9,7 @@ const H = canvas.height;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4, PLATFORM_FADING: 5, GRAB_FADE_OUT: 6, GRAB_FADE_IN: 7, END_LEVEL: 8 };
+const STATE = { PLAYING: 0, FADING: 1, GAME_OVER: 2, POPOUT: 3, PLATFORM: 4, PLATFORM_FADING: 5, GRAB_FADE_OUT: 6, GRAB_FADE_IN: 7, END_LEVEL: 8, INTRO: 9 };
 
 let state, player, claws, obstacles, score, fadeAlpha, fadeSpeed, gameOverAlpha;
 let runStartTime;
@@ -1982,6 +1982,199 @@ function drawGameOver() {
   ctx.textAlign = 'left';
 }
 
+// ─── Launch intro: UFO strikes the machine with purple lightning ────────────
+// Shown once at game launch (STATE.INTRO), before normal play begins. A flying
+// saucer swoops in from the top of the screen, dives down onto the claw machine
+// cabinet, and blasts it with a jagged purple lightning bolt on impact. After a
+// short flash the intro hands off to STATE.PLAYING and the game starts.
+let introElapsed;
+const INTRO_FLY_IN   = 60;   // dt-units: UFO descends toward the machine
+const INTRO_STRIKE   = 45;   // dt-units: lightning strike + flash holds
+const INTRO_HANDOFF  = 20;   // dt-units: brief settle before play starts
+const INTRO_DURATION = INTRO_FLY_IN + INTRO_STRIKE + INTRO_HANDOFF;
+
+// Machine cabinet geometry for the intro (purely cosmetic — the real gameplay
+// machine is the whole canvas). Lightning targets the top-center of this box.
+const INTRO_MACHINE = { x: W * 0.22, y: H * 0.42, w: W * 0.56, h: H * 0.5 };
+
+function startIntro() {
+  introElapsed = 0;
+  state = STATE.INTRO;
+}
+
+// One jagged lightning bolt from (x1,y1) to (x2,y2), split into segments that
+// jitter sideways. `seed` keeps the jitter stable within a frame so the bolt
+// doesn't strobe every draw.
+function drawLightningBolt(x1, y1, x2, y2, seed, width, color) {
+  const segments = 9;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 18;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    const bx = x1 + (x2 - x1) * t;
+    const by = y1 + (y2 - y1) * t;
+    // Deterministic pseudo-random sideways jitter, zeroed at the endpoints.
+    const jitter = i < segments ? Math.sin(seed + i * 12.9898) * 22 * (1 - Math.abs(t - 0.5) * 2 + 0.3) : 0;
+    ctx.lineTo(bx + jitter, by);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function drawIntroMachine() {
+  const m = INTRO_MACHINE;
+  // Cabinet body
+  ctx.fillStyle = '#241a3a';
+  ctx.strokeStyle = '#a259ff';
+  ctx.lineWidth = 3;
+  ctx.fillRect(m.x, m.y, m.w, m.h);
+  ctx.strokeRect(m.x, m.y, m.w, m.h);
+  // Glass display area
+  ctx.fillStyle = 'rgba(120,90,200,0.18)';
+  ctx.fillRect(m.x + 12, m.y + 34, m.w - 24, m.h * 0.55);
+  ctx.strokeStyle = '#ff6ec7';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(m.x + 12, m.y + 34, m.w - 24, m.h * 0.55);
+  // Marquee header
+  ctx.fillStyle = '#3a2a5a';
+  ctx.fillRect(m.x, m.y, m.w, 28);
+  ctx.fillStyle = '#ffe066';
+  ctx.font = 'bold 15px "Segoe UI", Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('CLAW', m.x + m.w / 2, m.y + 20);
+  // Prize chute at the bottom
+  ctx.fillStyle = '#150e26';
+  ctx.fillRect(m.x + m.w * 0.5 - 22, m.y + m.h - 30, 44, 30);
+  ctx.textAlign = 'left';
+}
+
+// A classic flying saucer, drawn centered at (cx, cy) with a purple glow and
+// a beam of underlight.
+function drawUFO(cx, cy, tilt) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(tilt);
+  // Under-glow beam
+  ctx.fillStyle = 'rgba(162,89,255,0.16)';
+  ctx.beginPath();
+  ctx.moveTo(-14, 6);
+  ctx.lineTo(14, 6);
+  ctx.lineTo(40, 60);
+  ctx.lineTo(-40, 60);
+  ctx.closePath();
+  ctx.fill();
+  // Saucer body
+  ctx.fillStyle = '#8a8fb0';
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 46, 15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#4a4d66';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Dome
+  ctx.fillStyle = '#b6a8ff';
+  ctx.beginPath();
+  ctx.ellipse(0, -2, 22, 18, 0, Math.PI, 0);
+  ctx.fill();
+  ctx.strokeStyle = '#7a5cff';
+  ctx.stroke();
+  // Dome highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.beginPath();
+  ctx.ellipse(-6, -8, 6, 4, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  // Running lights
+  const lightCount = 5;
+  for (let i = 0; i < lightCount; i++) {
+    const a = (i / (lightCount - 1)) * Math.PI;
+    const lx = Math.cos(a) * 38;
+    const ly = 4 + Math.sin(a) * 2;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+    ctx.fillStyle = (frame + i) % 12 < 6 ? '#ff6ec7' : '#a259ff';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawIntro(dt) {
+  introElapsed = Math.min(introElapsed + dt, INTRO_DURATION);
+  const t = introElapsed;
+
+  // Dark night backdrop for the launch scene.
+  ctx.fillStyle = '#0a0616';
+  ctx.fillRect(0, 0, W, H);
+
+  drawIntroMachine();
+
+  const m = INTRO_MACHINE;
+  const strikeX = m.x + m.w / 2;
+  const strikeTopY = m.y;              // top-center of the cabinet (impact point)
+
+  // UFO path: descends from above the screen toward a hover point just over the
+  // machine during the fly-in, then hovers there while it strikes.
+  const flyProgress = Math.min(t / INTRO_FLY_IN, 1);
+  const eased = 1 - Math.pow(1 - flyProgress, 3); // ease-out
+  const ufoHoverY = m.y - 70;
+  const ufoY = -40 + (ufoHoverY + 40) * eased;
+  // Slight sideways sway on the way in for a "swooping" feel.
+  const ufoX = strikeX + Math.sin(flyProgress * Math.PI) * 60 * (1 - eased);
+  const tilt = Math.sin(t * 0.08) * 0.08;
+
+  const striking = t >= INTRO_FLY_IN && t < INTRO_FLY_IN + INTRO_STRIKE;
+  const strikeT = striking ? (t - INTRO_FLY_IN) / INTRO_STRIKE : 0;
+
+  // Purple lightning strike from the UFO's underside down onto the machine.
+  if (striking) {
+    const boltCount = 2 + (frame % 2);
+    for (let b = 0; b < boltCount; b++) {
+      const seed = frame * 3.1 + b * 7.7;
+      drawLightningBolt(ufoX, ufoY + 14, strikeX + (b - 0.5) * 10, strikeTopY, seed, 4, '#c98bff');
+      drawLightningBolt(ufoX, ufoY + 14, strikeX + (b - 0.5) * 10, strikeTopY, seed + 1.3, 2, '#f0d9ff');
+    }
+    // Electric burst where the bolt hits the cabinet.
+    const burstR = 10 + Math.sin(strikeT * Math.PI) * 26;
+    const grad = ctx.createRadialGradient(strikeX, strikeTopY, 0, strikeX, strikeTopY, burstR);
+    grad.addColorStop(0, 'rgba(240,217,255,0.9)');
+    grad.addColorStop(0.5, 'rgba(162,89,255,0.5)');
+    grad.addColorStop(1, 'rgba(162,89,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(strikeX, strikeTopY, burstR, 0, Math.PI * 2);
+    ctx.fill();
+    // Full-screen purple flash that pulses with the strike.
+    const flash = Math.sin(strikeT * Math.PI) * 0.35 * (frame % 3 === 0 ? 1.4 : 1);
+    ctx.fillStyle = `rgba(180,120,255,${flash})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  drawUFO(ufoX, ufoY, tilt);
+
+  // Title text glowing over the scene.
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffe066';
+  ctx.shadowColor = '#a259ff';
+  ctx.shadowBlur = 20;
+  ctx.font = 'bold 26px "Segoe UI", Arial, sans-serif';
+  ctx.fillText('CLAW MACHINE', W / 2, 60);
+  ctx.shadowBlur = 0;
+  ctx.textAlign = 'left';
+
+  // Hand off to normal play after the strike settles.
+  if (introElapsed >= INTRO_DURATION) {
+    init();
+  }
+}
+
 // ─── Main Loop ────────────────────────────────────────────────────────────────
 
 let lastTime = 0;
@@ -1991,6 +2184,13 @@ function loop(ts) {
   const dt = Math.min((ts - lastTime) / 16.67, 3); // ~60 fps units
   lastTime = ts;
   frame++;
+
+  // Launch intro plays before anything else and draws its own backdrop.
+  if (state === STATE.INTRO) {
+    drawIntro(dt);
+    requestAnimationFrame(loop);
+    return;
+  }
 
   drawBackground();
 
@@ -2182,5 +2382,5 @@ function loop(ts) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
-init();
+startIntro();
 requestAnimationFrame(loop);
