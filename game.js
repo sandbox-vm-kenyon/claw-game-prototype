@@ -156,9 +156,10 @@ function handleDeath() {
 
 const FLOOR_Y = H - 6; // resting line for items sitting in the bottom of the box
 
-// Which obstacle kinds the claw can grab and carry off. The bear is left out
-// on purpose — only the crate, turtle and ball are up for grabs.
-const GRABBABLE_KINDS = ['turtle', 'block', 'ball'];
+// Which obstacle kinds the claw can grab and carry off. The bear, gorilla,
+// giraffe and shark are left out on purpose — the crate, turtle, ball, and
+// the level-1 collectible animals (hamster, walrus, dolphin) are up for grabs.
+const GRABBABLE_KINDS = ['turtle', 'block', 'ball', 'hamster', 'walrus', 'dolphin'];
 
 // Beach-ball rolling tuning — the ball is the only obstacle that reacts to
 // contact by rolling instead of just blocking/supporting the player.
@@ -184,13 +185,16 @@ const TURTLE_BOUNDS_PAD = 4;  // keep the turtle from crawling off the box edges
 
 function initObstacles() {
   const specs = [
-    { kind: 'turtle',  w: 46, h: 24, xFrac: 0.09 },
-    { kind: 'block',   w: 32, h: 32, xFrac: 0.22 },
-    { kind: 'gorilla', w: 40, h: 40, xFrac: 0.35 },
-    { kind: 'ball',    w: 34, h: 34, xFrac: 0.48 },
-    { kind: 'giraffe', w: 34, h: 52, xFrac: 0.61 },
-    { kind: 'bear',    w: 36, h: 38, xFrac: 0.74 },
-    { kind: 'shark',   w: 48, h: 30, xFrac: 0.89 },
+    { kind: 'turtle',  w: 46, h: 24, xFrac: 0.07 },
+    { kind: 'hamster', w: 30, h: 24, xFrac: 0.17 },
+    { kind: 'block',   w: 32, h: 32, xFrac: 0.27 },
+    { kind: 'gorilla', w: 40, h: 40, xFrac: 0.37 },
+    { kind: 'ball',    w: 34, h: 34, xFrac: 0.47 },
+    { kind: 'walrus',  w: 46, h: 32, xFrac: 0.57 },
+    { kind: 'giraffe', w: 34, h: 52, xFrac: 0.66 },
+    { kind: 'bear',    w: 36, h: 38, xFrac: 0.76 },
+    { kind: 'dolphin', w: 48, h: 30, xFrac: 0.86 },
+    { kind: 'shark',   w: 48, h: 30, xFrac: 0.95 },
   ];
   obstacles = specs.map(s => ({
     kind: s.kind,
@@ -1537,6 +1541,106 @@ function drawObstacle(ob) {
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(ob.x + ob.w - 16, cy + 4); ctx.lineTo(ob.x + ob.w - 2, cy + 4); ctx.stroke();
+
+  } else if (ob.kind === 'hamster') {
+    // Small round golden body sitting on the floor
+    ctx.fillStyle = '#e0a860';
+    ctx.beginPath();
+    ctx.ellipse(cx, ob.y + ob.h * 0.6, ob.w * 0.5, ob.h * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#b5793a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Rounded head
+    ctx.fillStyle = '#eab878';
+    ctx.beginPath();
+    ctx.arc(cx, ob.y + ob.h * 0.34, ob.w * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    // Ears
+    ctx.fillStyle = '#d99a58';
+    ctx.beginPath(); ctx.arc(cx - ob.w * 0.24, ob.y + ob.h * 0.16, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + ob.w * 0.24, ob.y + ob.h * 0.16, 4, 0, Math.PI * 2); ctx.fill();
+    // Cream belly patch
+    ctx.fillStyle = '#f6e4c8';
+    ctx.beginPath();
+    ctx.ellipse(cx, ob.y + ob.h * 0.66, ob.w * 0.26, ob.h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Eyes and nose
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(cx - 4, ob.y + ob.h * 0.32, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 4, ob.y + ob.h * 0.32, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#a05a3a';
+    ctx.beginPath(); ctx.arc(cx, ob.y + ob.h * 0.42, 1.6, 0, Math.PI * 2); ctx.fill();
+
+  } else if (ob.kind === 'walrus') {
+    // Plump brown body resting on the floor
+    ctx.fillStyle = '#8a6b5a';
+    ctx.beginPath();
+    ctx.ellipse(cx, ob.y + ob.h * 0.58, ob.w * 0.5, ob.h * 0.44, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#5e4638';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Head bulge at the right
+    ctx.fillStyle = '#9a7a68';
+    ctx.beginPath();
+    ctx.arc(ob.x + ob.w * 0.74, ob.y + ob.h * 0.5, ob.h * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    // Snout/muzzle
+    ctx.fillStyle = '#c8a892';
+    ctx.beginPath();
+    ctx.ellipse(ob.x + ob.w * 0.84, ob.y + ob.h * 0.6, ob.w * 0.16, ob.h * 0.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Tusks
+    ctx.fillStyle = '#f4f0e4';
+    ctx.beginPath(); ctx.moveTo(ob.x + ob.w * 0.80, ob.y + ob.h * 0.68); ctx.lineTo(ob.x + ob.w * 0.78, ob.y + ob.h * 0.92); ctx.lineTo(ob.x + ob.w * 0.83, ob.y + ob.h * 0.70); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(ob.x + ob.w * 0.88, ob.y + ob.h * 0.68); ctx.lineTo(ob.x + ob.w * 0.90, ob.y + ob.h * 0.92); ctx.lineTo(ob.x + ob.w * 0.85, ob.y + ob.h * 0.70); ctx.closePath(); ctx.fill();
+    // Fore flipper
+    ctx.fillStyle = '#6e5344';
+    ctx.beginPath();
+    ctx.ellipse(ob.x + ob.w * 0.34, ob.y + ob.h * 0.82, ob.w * 0.14, ob.h * 0.14, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(ob.x + ob.w * 0.72, ob.y + ob.h * 0.42, 2, 0, Math.PI * 2); ctx.fill();
+
+  } else if (ob.kind === 'dolphin') {
+    // Sleek blue-grey body lying on the floor
+    ctx.fillStyle = '#5b8fb0';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, ob.w * 0.5, ob.h * 0.38, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Tail fluke at the left
+    ctx.beginPath();
+    ctx.moveTo(ob.x + 4, cy);
+    ctx.lineTo(ob.x - 6, cy - 9);
+    ctx.lineTo(ob.x - 6, cy + 9);
+    ctx.closePath();
+    ctx.fill();
+    // Curved dorsal fin on top
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, ob.y + 4);
+    ctx.quadraticCurveTo(cx + 2, ob.y - 8, cx + 8, ob.y + 4);
+    ctx.closePath();
+    ctx.fill();
+    // Beak/rostrum at the right
+    ctx.beginPath();
+    ctx.moveTo(ob.x + ob.w - 2, cy - 3);
+    ctx.lineTo(ob.x + ob.w + 8, cy);
+    ctx.lineTo(ob.x + ob.w - 2, cy + 3);
+    ctx.closePath();
+    ctx.fill();
+    // Pale belly
+    ctx.fillStyle = '#dbe9f0';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ob.h * 0.2, ob.w * 0.42, ob.h * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye and smile
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(ob.x + ob.w - 12, cy - 3, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#2f5f7a';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ob.x + ob.w - 14, cy + 3); ctx.quadraticCurveTo(ob.x + ob.w - 8, cy + 6, ob.x + ob.w - 2, cy + 3); ctx.stroke();
   }
 }
 
