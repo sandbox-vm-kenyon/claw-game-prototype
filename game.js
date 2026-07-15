@@ -1423,6 +1423,13 @@ function drawEnemy(e) {
 }
 
 function drawDoor(d) {
+  // In the jungle level (3+), the exit is a cave mouth in a rocky outcrop
+  // instead of a wooden door. Same rect/trigger, different graphic.
+  if (platformLevel >= 3) {
+    drawCave(d);
+    return;
+  }
+
   // Black door frame with a window
   ctx.fillStyle = '#222';
   ctx.fillRect(d.x - d.w / 2, d.y, d.w, d.h);
@@ -1439,6 +1446,69 @@ function drawDoor(d) {
   ctx.beginPath();
   ctx.arc(d.x + d.w / 2 - 8, d.y + d.h / 2, 3, 0, Math.PI * 2);
   ctx.fill();
+}
+
+// Cave-mouth exit for the jungle level: a mossy rock mound with a dark,
+// arched opening. Occupies the same footprint as the door (centered on d.x,
+// standing on the ground with its base at d.y + d.h).
+function drawCave(d) {
+  const cx = d.x;                 // horizontal center of the opening
+  const baseY = d.y + d.h;        // ground level (bottom of the rect)
+  const rockW = d.w + 26;         // rock mound is a bit wider than the opening
+  const rockTop = d.y - 10;       // mound rises slightly above the opening
+  const mouthW = d.w - 8;         // width of the cave opening
+  const mouthTop = d.y + 14;      // top of the arched opening
+
+  // Rocky outcrop: a rounded grey mound behind the opening.
+  ctx.fillStyle = '#5a5750';
+  ctx.beginPath();
+  ctx.moveTo(cx - rockW / 2, baseY);
+  ctx.quadraticCurveTo(cx - rockW / 2, rockTop, cx, rockTop - 8);
+  ctx.quadraticCurveTo(cx + rockW / 2, rockTop, cx + rockW / 2, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Darker shading on the rock for a bit of depth.
+  ctx.fillStyle = '#494640';
+  ctx.beginPath();
+  ctx.moveTo(cx + 2, rockTop - 6);
+  ctx.quadraticCurveTo(cx + rockW / 2 - 4, rockTop + 6, cx + rockW / 2, baseY);
+  ctx.lineTo(cx + 6, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // The dark cave opening: a flat-bottomed arch.
+  ctx.fillStyle = '#0a0a0a';
+  ctx.beginPath();
+  ctx.moveTo(cx - mouthW / 2, baseY);
+  ctx.lineTo(cx - mouthW / 2, mouthTop + 6);
+  ctx.quadraticCurveTo(cx - mouthW / 2, mouthTop, cx, mouthTop);
+  ctx.quadraticCurveTo(cx + mouthW / 2, mouthTop, cx + mouthW / 2, mouthTop + 6);
+  ctx.lineTo(cx + mouthW / 2, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // Subtle inner glow so the opening reads as a deep passage.
+  const glow = ctx.createRadialGradient(cx, baseY - 6, 2, cx, baseY - 6, mouthW / 2 + 6);
+  glow.addColorStop(0, 'rgba(60,90,70,0.55)');
+  glow.addColorStop(1, 'rgba(10,10,10,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.moveTo(cx - mouthW / 2, baseY);
+  ctx.lineTo(cx - mouthW / 2, mouthTop + 6);
+  ctx.quadraticCurveTo(cx - mouthW / 2, mouthTop, cx, mouthTop);
+  ctx.quadraticCurveTo(cx + mouthW / 2, mouthTop, cx + mouthW / 2, mouthTop + 6);
+  ctx.lineTo(cx + mouthW / 2, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // A few tufts of moss along the top of the outcrop.
+  ctx.fillStyle = '#3f7d43';
+  for (let i = -1; i <= 1; i++) {
+    ctx.beginPath();
+    ctx.arc(cx + i * (rockW / 3.2), rockTop + 2 + Math.abs(i) * 4, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawPlatformHUD() {
