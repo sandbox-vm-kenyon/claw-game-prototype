@@ -33,13 +33,6 @@
       padding-top: 6px;
       padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
     }
-    h1 {
-      color: #ffe066;
-      font-size: 2rem;
-      text-shadow: 0 0 18px #ff6ec7, 0 0 40px #a259ff;
-      letter-spacing: 3px;
-      margin-bottom: 8px;
-    }
     canvas {
       display: block;
       border-radius: 18px;
@@ -47,14 +40,14 @@
       background: #0d0820;
       /* Keep the canvas's internal resolution at 480x520 (game.js reads those
          pixel dimensions), but scale its ON-SCREEN size down to fit the space
-         that remains above the h1, the instructions, and the reserved
-         controls/Chrome-bar band at the bottom. This guarantees the whole
-         game view sits ABOVE the controls on short (iOS Chrome) viewports
-         instead of being overlapped by them. The 480/520 aspect ratio is
-         preserved via aspect-ratio + width derived from the height cap. */
+         that remains above the instructions and the reserved controls/Chrome-bar
+         band at the bottom. This guarantees the whole game view sits ABOVE the
+         controls on short (iOS Chrome) viewports instead of being overlapped by
+         them. The 480/520 aspect ratio is preserved via aspect-ratio + width
+         derived from the height cap. */
       aspect-ratio: 480 / 520;
       width: auto;
-      height: min(520px, calc(100vh - 200px - env(safe-area-inset-bottom, 0px)));
+      height: min(520px, calc(100vh - 160px - env(safe-area-inset-bottom, 0px)));
       max-width: 100vw;
     }
     #instructions {
@@ -154,7 +147,6 @@
   </style>
 </head>
 <body>
-  <h1>&#127381; CLAW MACHINE &#127381;</h1>
   <div id="wrapper">
     <canvas id="canvas" width="480" height="520"></canvas>
     <button id="btnPlayAgain">PLAY AGAIN</button>
