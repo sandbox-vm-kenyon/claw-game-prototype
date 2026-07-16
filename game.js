@@ -669,16 +669,18 @@ function updateClaws(dt) {
 
       // Fully retracted with something in its grip. Catching the bunny ends
       // the run — the same fade-to-black-and-game-over used for a fatal
-      // finger touch — rather than the fade-to-black-and-back used when it's
-      // just an obstacle, since there's no "resuming play" once she's the
-      // one that's been hauled off.
+      // finger touch — since there's no "resuming play" once she's the one
+      // that's been hauled off. Grabbing an ordinary obstacle, on the other
+      // hand, simply makes that object vanish (it was already pulled out of
+      // the obstacles list at grab time): let go of the grip so the empty
+      // claw finishes leaving the scene, with NO screen-wide fade-to-black
+      // and no interruption — play continues uninterrupted in STATE.PLAYING.
       if (c.grabbing && c.retractElapsed >= c.retractDuration) {
         if (c.grabbedIsPlayer) {
           state = STATE.FADING;
         } else if (c.grabbedObstacle) {
-          state = STATE.GRAB_FADE_OUT;
-          grabFadeAlpha = 0;
-          grabFadeClaw = c;
+          c.grabbing = false;
+          c.grabbedObstacle = null;
         }
       }
     }
@@ -702,10 +704,10 @@ function updateClaws(dt) {
   // the eased position calculation can leave c.y a hair above CLAW_SPAWN_Y
   // due to floating-point rounding even once progress reaches 1, which let
   // a fully-retracted claw sit stuck forever and silently blocked all future
-  // spawns (since spawnClaw() only fires once claws.length reaches 0). A
-  // claw that just finished retracting with something in its grip is kept
-  // around a little longer — it's removed once the grab fade sequence lets
-  // go of it (see GRAB_FADE_IN in the main loop) rather than vanishing here.
+  // spawns (since spawnClaw() only fires once claws.length reaches 0). A claw
+  // that grabbed an ordinary obstacle releases its grip the instant it finishes
+  // retracting (above), so the object simply vanishes with it and the claw is
+  // removed here like any other fully-retracted claw — no fade, no pause.
   claws = claws.filter(c => c.retracting ? (c.retractElapsed < c.retractDuration || c.grabbing) : c.y < H + 60);
 }
 
