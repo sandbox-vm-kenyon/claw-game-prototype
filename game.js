@@ -202,6 +202,22 @@ const BALL_MIN_BOUNCE_VY = 0.6;     // once a floor bounce would be slower than 
 const TURTLE_SPEED = 0.5;     // slow crawl speed while ridden (px/frame)
 const TURTLE_BOUNDS_PAD = 4;  // keep the turtle from crawling off the box edges
 
+// Level-1 animal "push response" tuning — the box-stage animals below aren't
+// rigid: when the player pushes into one from the side it rocks/tilts a little
+// and drifts slowly in the push direction, then eases back toward where it was.
+// The crate ('block') and the beach ball ('ball', which has its own rolling
+// physics) are intentionally excluded, and this only ever runs on the level-1
+// box obstacles, never the platforming stages (which have no `obstacles`).
+const PUSH_ANIMAL_KINDS = ['turtle', 'hamster', 'gorilla', 'walrus', 'giraffe', 'bear', 'dolphin', 'shark'];
+const PUSH_DRIFT_ACCEL = 0.14;  // gentle nudge added to drift speed per frame of contact (px/frame)
+const PUSH_MAX_DRIFT = 10;      // how far (px) an animal may drift from its home spot
+const PUSH_DRIFT_FRICTION = 0.9; // per-frame decay so the drift is slow and settles
+const PUSH_RETURN = 0.02;       // gentle spring easing the animal back toward home when not pushed
+const PUSH_TILT_ACCEL = 0.006;  // rocking impulse toward the push direction per frame of contact (rad/frame)
+const PUSH_MAX_TILT = 0.13;     // cap on the tilt angle so the wobble stays subtle (rad, ~7.5°)
+const PUSH_TILT_STIFFNESS = 0.02; // spring pulling the tilt back upright
+const PUSH_TILT_DAMPING = 0.86;   // damping so the rocking settles rather than oscillating forever
+
 function initObstacles() {
   const specs = [
     { kind: 'turtle',  w: 46, h: 24, xFrac: 0.07 },
@@ -229,6 +245,11 @@ function initObstacles() {
     touching: false,    // whether the player is touching it this frame (beach ball only)
     wasTouching: false, // touching state from the previous frame, used to detect a fresh impact (beach ball only)
     falling: false, // set true if the claw grabs then drops this item mid-retract, until it lands again
+    homeX: W * s.xFrac - s.w / 2, // resting x the animal eases back toward after being pushed (push animals)
+    pushed: false,  // whether the player pushed into it (from the side) this frame (push animals)
+    driftVX: 0,     // slow horizontal drift velocity from being pushed (push animals)
+    tilt: 0,        // current rocking/tilt angle in radians (push animals)
+    tiltVel: 0,     // angular velocity of the rocking spring (push animals)
   }));
 }
 
@@ -291,6 +312,17 @@ function resolveObstacle(p, ob) {
     }
   }
 
+  // Level-1 animals aren't rigid: a sideways push (not being stood on) makes
+  // them rock and drift slowly away from the player. Just flag the push
+  // direction here; updateObstacles integrates the gentle drift + wobble.
+  if (PUSH_ANIMAL_KINDS.includes(ob.kind) && !stoodOn) {
+    const cx = ob.x + ob.w / 2;
+    const awayDir = cx >= p.x ? 1 : -1; // drift away from the player's side
+    ob.pushed = true;
+    ob.driftVX += awayDir * PUSH_DRIFT_ACCEL;
+    ob.tiltVel += awayDir * PUSH_TILT_ACCEL; // rock in the push direction
+  }
+
   // Turtle only crawls while it's currently being stood on — see updateObstacles.
   if (ob.kind === 'turtle' && stoodOn) ob.stoodOn = true;
 
@@ -305,6 +337,7 @@ function resolveObstacles() {
   for (const ob of obstacles) {
     if (ob.kind === 'turtle') ob.stoodOn = false; // recomputed below each frame
     if (ob.kind === 'ball') { ob.wasTouching = ob.touching; ob.touching = false; } // recomputed below each frame
+    if (PUSH_ANIMAL_KINDS.includes(ob.kind)) ob.pushed = false; // recomputed below each frame
   }
   for (const ob of obstacles) resolveObstacle(player, ob);
 }
@@ -356,6 +389,29 @@ function updateObstacles(dt) {
         ob.falling = false;
       }
       continue;
+    }
+
+    // Level-1 animal push response: a subtle rock/tilt plus a slow drift in the
+    // push direction, easing back toward the animal's home spot once the player
+    // stops pushing. Runs only for the box-stage animals (PUSH_ANIMAL_KINDS);
+    // the turtle also has its own ride-crawl below, which is unaffected.
+    if (PUSH_ANIMAL_KINDS.includes(ob.kind)) {
+      if (ob.pushed) {
+        // Drift in the push direction, clamped so it never wanders far.
+        ob.x += ob.driftVX * dt;
+        ob.x = Math.max(ob.homeX - PUSH_MAX_DRIFT, Math.min(ob.homeX + PUSH_MAX_DRIFT, ob.x));
+      } else {
+        // Not being pushed — gently ease back toward home.
+        ob.x += (ob.homeX - ob.x) * PUSH_RETURN * dt;
+      }
+      ob.driftVX *= PUSH_DRIFT_FRICTION;
+      if (Math.abs(ob.driftVX) < 0.01) ob.driftVX = 0;
+
+      // Rocking: a damped spring pulling the tilt back upright, kept subtle.
+      ob.tiltVel += -ob.tilt * PUSH_TILT_STIFFNESS * dt;
+      ob.tiltVel *= PUSH_TILT_DAMPING;
+      ob.tilt += ob.tiltVel * dt;
+      ob.tilt = Math.max(-PUSH_MAX_TILT, Math.min(PUSH_MAX_TILT, ob.tilt));
     }
 
     if (ob.kind === 'ball') {
@@ -414,6 +470,7 @@ function updateObstacles(dt) {
       }
 
       player.x += ob.x - startX; // carry the rider exactly as far as it actually moved
+      ob.homeX = ob.x; // ride crawl relocates its resting spot, so the push-return spring follows it
     }
   }
 }
@@ -1872,6 +1929,19 @@ function drawObstacle(ob) {
   const cx = ob.x + ob.w / 2;
   const cy = ob.y + ob.h / 2;
 
+  // Level-1 animals rock slightly when pushed: rotate the whole figure about
+  // its base (bottom-center) by its current tilt so it wobbles like it's
+  // rocking on the floor. A no-op (tilt 0) for animals at rest and for every
+  // non-push kind (crate/ball), which never set a tilt.
+  const rocking = ob.tilt && PUSH_ANIMAL_KINDS.includes(ob.kind);
+  if (rocking) {
+    ctx.save();
+    const pivotY = ob.y + ob.h; // base of the figure sitting on the floor
+    ctx.translate(cx, pivotY);
+    ctx.rotate(ob.tilt);
+    ctx.translate(-cx, -pivotY);
+  }
+
   if (ob.kind === 'turtle') {
     // Shell
     ctx.fillStyle = '#3a7d3a';
@@ -2128,6 +2198,8 @@ function drawObstacle(ob) {
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(ob.x + ob.w - 14, cy + 3); ctx.quadraticCurveTo(ob.x + ob.w - 8, cy + 6, ob.x + ob.w - 2, cy + 3); ctx.stroke();
   }
+
+  if (rocking) ctx.restore();
 }
 
 function drawObstacles() {
