@@ -8,7 +8,7 @@ import { resolveObstacles, updatePlayerPhysics } from './physics.js';
 import { drawBackground, drawPlatformBackground } from './render/background.js';
 import { drawClaws } from './render/claws.js';
 import { drawFadeOverlay, drawGameOver, drawHUD, drawPlatformHUD } from './render/hud.js';
-import { drawClawMashineLogo, drawIntro, startIntro } from './render/intro.js';
+import { drawIntro, startIntro } from './render/intro.js';
 import { drawObstacles } from './render/obstacles.js';
 import { drawPlayer } from './render/player.js';
 import { drawPlatformWorld } from './render/world.js';
@@ -30,7 +30,7 @@ export function init() {
   game.grabFadeAlpha = 0;
   game.grabFadeClaw = null;
 
-  game.logoY = LOGO_START_Y;
+  // Remove unused logoY initialization
 
   if (btnPlayAgain) btnPlayAgain.classList.remove('visible');
 
@@ -155,7 +155,6 @@ function loop(ts) {
     drawClaws();
     drawPlayer(game.player);
     drawHUD();
-    drawClawMashineLogo(dt);
 
     // Merely touching the claw's fingers is no longer fatal on its own — the
     // bunny only dies if she's actually grabbed (see playerGrabAligned in
