@@ -1782,10 +1782,14 @@ if (btnPlayAgain) {
 }
 
 function handleInput() {
-  // Platformer-style horizontal movement
-  if (keys['ArrowLeft']  || keys['a'] || keys['A']) player.vx = -player.speed;
-  else if (keys['ArrowRight'] || keys['d'] || keys['D']) player.vx = player.speed;
-  else player.vx = 0;
+  // Platformer-style horizontal movement. player.moveDir records the raw
+  // left/right MOVE-INPUT intent this frame (-1 left, +1 right, 0 none),
+  // independent of whether the bunny actually moves — the head-roll animation
+  // is driven by this intent, not by resulting position change, so she turns to
+  // face her input even when blocked, and stays put when carried by a platform.
+  if (keys['ArrowLeft']  || keys['a'] || keys['A']) { player.vx = -player.speed; player.moveDir = -1; }
+  else if (keys['ArrowRight'] || keys['d'] || keys['D']) { player.vx = player.speed; player.moveDir = 1; }
+  else { player.vx = 0; player.moveDir = 0; }
 
   // Jump — delegated to the shared, level-agnostic jump trigger so every
   // stage (present or future) gets identical jump behavior.
@@ -2277,17 +2281,18 @@ let _earFoldActive = true;
 function drawPlayer(p) {
   const r = p.r;
 
-  // ── Rolling: accumulate a roll angle from actual horizontal travel, so the
-  // head spins like a wheel in the direction of movement (roll = distance/r).
-  // The spin only makes sense while the bunny is actually rolling along a
-  // surface; mid-jump the head should hold still rather than keep spinning, so
-  // roll is frozen at its last grounded value while airborne (and _prevX is
-  // still tracked so the spin resumes seamlessly on landing without a snap).
-  if (p._prevX === undefined) p._prevX = p.x;
-  const dx = p.x - p._prevX;
-  p._prevX = p.x;
+  // ── Rolling: accumulate a roll angle from the player's left/right MOVE INPUT
+  // intent (p.moveDir), NOT from actual horizontal travel, so the head faces
+  // her input direction and spins like a wheel that way. Driving off input
+  // intent means: (1) she still turns to face a held left/right even when an
+  // obstacle blocks her and she can't actually move, and (2) she does NOT spin
+  // when a platform (e.g. the moving turtle) carries her while she gives no
+  // left/right input. The per-frame roll uses her normal move speed so the
+  // spin rate matches unobstructed walking. As before, the spin only applies
+  // while grounded; mid-jump the head holds its last roll value.
+  const moveDir = p.moveDir || 0;
   if (p.roll === undefined) p.roll = 0;
-  if (p.grounded) p.roll += dx / r; // radians of roll per pixel travelled (grounded only)
+  if (p.grounded) p.roll += (moveDir * p.speed) / r; // radians of roll per input frame (grounded only)
   const roll = p.roll;
 
   // Ears only fold against the ground while the bunny is standing on a surface.
