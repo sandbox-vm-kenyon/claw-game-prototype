@@ -678,11 +678,22 @@ function findGrabTarget(c) {
 // full-containment check findGrabTarget uses for wide obstacles: the claw
 // no longer needs to be squarely, fully lined up over her, just clipping
 // enough of her to plausibly grab hold.
+//
+// Also requires the bunny to actually be down inside the jaws' grab zone, not
+// sitting ON TOP of the claw. The jaws close between the head (c.y) and the
+// tips (c.y + c.armLen); when the bunny is riding above the claw her whole
+// body is above c.y, so the jaws never got hold of her — grabbing her from
+// underneath in that case is the bug. She counts as grabbable only if some of
+// her body reaches down to at least the head level (her bottom edge is at or
+// below c.y), which lets her keep riding the claw up to finish the level.
 function playerGrabAligned(c) {
   const left = clawTipLeft(c), right = clawTipRight(c);
   const playerLeft = player.x - player.r, playerRight = player.x + player.r;
   const overlap = Math.min(right, playerRight) - Math.max(left, playerLeft);
-  return overlap >= (playerRight - playerLeft) * 0.3;
+  if (overlap < (playerRight - playerLeft) * 0.3) return false;
+  // Reject when the bunny is above the claw (riding on its body): her lowest
+  // point must reach down into the jaw zone (>= the claw head y) to be caught.
+  return player.y + player.r >= c.y;
 }
 
 // ─── Collision ────────────────────────────────────────────────────────────────
