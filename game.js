@@ -1863,9 +1863,23 @@ function handleInput() {
 // (or handleInput()) — it never has to re-implement this.
 function tryJump() {
   const jumpPressed = keys['ArrowUp'] || keys['w'] || keys['W'] || keys[' '];
-  if (jumpPressed && player.grounded) {
+  // Edge-detect the jump input so a blocked jump fires its feedback twitch once
+  // per press, not every frame the key is held. (The successful-jump path is
+  // already self-limiting because it clears player.grounded.)
+  const justPressed = jumpPressed && !player.jumpKeyWasDown;
+  player.jumpKeyWasDown = jumpPressed;
+
+  if (!jumpPressed || !player.grounded) return;
+
+  // Jump is only allowed when the ears are at least partially folded (their tips
+  // down against the ground). If they aren't folded enough, the jump does NOT
+  // happen; instead play the quick half-fold-then-straighten feedback twitch so
+  // the player sees that pressing jump drives the ears' "jumping" fold action.
+  if (playerEarFold(player) >= EAR_FOLD_JUMP_THRESHOLD) {
     player.vy = JUMP_VELOCITY;
     player.grounded = false;
+  } else if (justPressed && (!player.earFeedbackT || player.earFeedbackT <= 0)) {
+    player.earFeedbackT = EAR_FEEDBACK_DURATION;
   }
 }
 
@@ -1878,6 +1892,7 @@ function tryJump() {
 // simply by calling this helper; there is no per-stage jump re-wiring.
 function applyPlayerJumpPhysics(dt) {
   handleInput();
+  updateEarFeedback(player, dt); // advance the blocked-jump feedback twitch
   player.vy = Math.min(player.vy + GRAVITY, MAX_FALL_SPEED);
   // While airborne, apply the horizontal boost so the jump's horizontal reach
   // is ~20% greater than grounded movement, without altering jump height.
@@ -2208,6 +2223,76 @@ function drawObstacles() {
   for (const ob of obstacles) drawObstacle(ob);
 }
 
+// Ear geometry shared between the input logic (which needs to know how folded
+// the ears are BEFORE drawing, to gate the jump) and the renderer. The two ears
+// are mounted a little outward from the top of the head; their length is a fixed
+// multiple of the head radius. Keeping these as named constants means the jump
+// gate and the drawn fold are computed from the exact same geometry — one source
+// of truth — rather than two hand-tuned copies that could drift apart.
+const EAR_LENGTH_FRAC = 1.9;           // earH = r * this
+const EAR_MOUNT_ANGLES = [-0.45, 0.45]; // left, right ear mounting angle from top
+
+// Jump is gated on the ears being at least PARTIALLY folded (their tips down
+// against the ground). This is the geometric fold-progress threshold the deepest
+// ear must reach for a jump to be allowed; below it the jump is blocked and the
+// feedback twitch plays instead.
+const EAR_FOLD_JUMP_THRESHOLD = 0.25;
+
+// Blocked-jump feedback twitch: ~0.5s total. The ears half-fold and straighten
+// back out to show that pressing jump drives the ears' "jumping" fold action.
+const EAR_FEEDBACK_DURATION = 30;   // dt-units (~0.5s at 60fps)
+const EAR_FEEDBACK_MAX_FOLD = 0.5;  // peak additive fold of the half-fold twitch
+
+// How folded a single ear is, as a raw 0..1 progress, given the head's current
+// roll and this ear's mounting angle. 0 = ear still straight up / horizontal
+// (tip above the head's bottom edge); 1 = ear swung fully down (tip at "straight
+// down"). This is the SAME derivation drawFoldingEar uses for its geometric
+// fold, factored out so tryJump can read the live fold amount without drawing.
+// It deliberately ignores the grounded gate and the ease-in squaring — callers
+// apply those as they need (the jump gate wants the linear geometric progress).
+function earFoldProgress(roll, angFromTop, r) {
+  const earH = r * EAR_LENGTH_FRAC;
+  // World "down" lives at local angle (PI/2 - roll) after the head rolls.
+  const earDownAngle = Math.PI / 2 - roll;
+  const downAng = (earDownAngle - angFromTop) + Math.PI / 2; // 0 => ear points straight down
+  const d = Math.atan2(Math.sin(downAng), Math.cos(downAng));
+  const tipDepth = earH * Math.max(0, Math.cos(d));
+  return earH > r ? Math.max(0, Math.min(1, (tipDepth - r) / (earH - r))) : 0;
+}
+
+// The fold amount of the bunny's ears RIGHT NOW: the deepest fold across her two
+// ears at her current head roll. Used by tryJump to require the ears be at least
+// partially folded against the ground before a jump is allowed. Only meaningful
+// while grounded (folding is suppressed in the air), so callers pair it with the
+// grounded check.
+function playerEarFold(p) {
+  if (p.roll === undefined) return 0;
+  let max = 0;
+  for (const a of EAR_MOUNT_ANGLES) {
+    max = Math.max(max, earFoldProgress(p.roll, a, p.r));
+  }
+  return max;
+}
+
+// Advances the blocked-jump feedback twitch timer by dt each frame. The timer
+// (p.earFeedbackT) counts down from EAR_FEEDBACK_DURATION to 0 while a twitch is
+// playing; tryJump sets it to the full duration when a jump is rejected for
+// un-folded ears. Called once per frame from applyPlayerJumpPhysics so every
+// level ticks it uniformly.
+function updateEarFeedback(p, dt) {
+  if (p.earFeedbackT === undefined) p.earFeedbackT = 0;
+  if (p.earFeedbackT > 0) p.earFeedbackT = Math.max(0, p.earFeedbackT - dt);
+}
+
+// The additive fold contributed by the feedback twitch right now: a smooth
+// half-fold-then-straighten pulse (0 → EAR_FEEDBACK_MAX_FOLD → 0) shaped as a
+// single sine hump over the twitch's EAR_FEEDBACK_DURATION.
+function earFeedbackFoldAmount(p) {
+  if (!p || !p.earFeedbackT || p.earFeedbackT <= 0) return 0;
+  const progress = 1 - p.earFeedbackT / EAR_FEEDBACK_DURATION; // 0..1 over the twitch
+  return Math.sin(progress * Math.PI) * EAR_FEEDBACK_MAX_FOLD;
+}
+
 // Draws one folding ear in the head's LOCAL, roll-rotated frame.
 //  angFromTop  – the ear's mounting angle around the head, measured so that
 //                0 is straight up. As the head rolls this rotates with it.
@@ -2216,7 +2301,7 @@ function drawObstacles() {
 //  it folds/flops back against the floor instead of clipping through it.
 function drawFoldingEar(r, angFromTop, furColor, furShadow, innerEar) {
   const earW = r * 0.55;
-  const earH = r * 1.9;
+  const earH = r * EAR_LENGTH_FRAC;
   const segs = 5;
 
   // World-space downward direction expressed in the head's local (roll-rotated)
@@ -2250,7 +2335,14 @@ function drawFoldingEar(r, angFromTop, furColor, furShadow, innerEar) {
   const foldProgress = earH > r
     ? Math.max(0, Math.min(1, (tipDepth - r) / (earH - r)))
     : 0;
-  const fold = _earFoldActive ? foldProgress * foldProgress : 0; // ease-in the fold (grounded only)
+  // Geometric fold from the head roll (ease-in, grounded only), plus the
+  // transient blocked-jump feedback fold. The feedback (a brief half-fold that
+  // straightens back out, set on _earFeedbackFold by tryJump) is added on top so
+  // that when the player presses jump with un-folded ears, the ears twitch into
+  // their "jumping" fold and back, showing what the jump input does. It's
+  // clamped so the combined fold never exceeds a full fold.
+  const geomFold = _earFoldActive ? foldProgress * foldProgress : 0; // ease-in the fold (grounded only)
+  const fold = Math.min(1, geomFold + _earFeedbackFold);
 
   // Build the ear as a chain of segments; each successive segment bends toward
   // horizontal (away from the ground) proportionally to `fold`, so the tip
@@ -2352,8 +2444,17 @@ let _earDownAngle = 0;
 // stay straight mid-jump.
 let _earFoldActive = true;
 
+// Transient additive fold (0..~0.5) for the blocked-jump feedback twitch. Set
+// each frame by drawPlayer from the player's feedback timer; added on top of the
+// geometric fold in drawFoldingEar.
+let _earFeedbackFold = 0;
+
 function drawPlayer(p) {
   const r = p.r;
+  // Surface the blocked-jump feedback fold for this player into the ear
+  // renderer's global, mapping the timer (see tryJump / EAR_FEEDBACK_DURATION)
+  // into a half-fold that rises then straightens back out.
+  _earFeedbackFold = earFeedbackFoldAmount(p);
 
   // ── Rolling: accumulate a roll angle from the player's left/right MOVE INPUT
   // intent (p.moveDir), NOT from actual horizontal travel, so the head faces
