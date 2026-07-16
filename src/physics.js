@@ -1,7 +1,7 @@
 import { game } from './state.js';
 import { H, W } from './core.js';
 import { applyPlayerJumpPhysics } from './input.js';
-import { BALL_CARRY_FACTOR, BALL_MAX_SPEED, BALL_POP_LAND, BALL_POP_SIDE, BALL_ROLL_ACCEL, EAR_FEEDBACK_DURATION, EAR_FEEDBACK_MAX_FOLD, EAR_LENGTH_FRAC, EAR_MOUNT_ANGLES, PUSH_DRIFT_ACCEL, PUSH_TILT_ACCEL } from './tuning.js';
+import { BALL_CARRY_FACTOR, BALL_MAX_SPEED, BALL_POP_LAND, BALL_POP_SIDE, BALL_ROLL_ACCEL, EAR_FEEDBACK_DURATION, EAR_FEEDBACK_MAX_FOLD, EAR_LENGTH_FRAC, EAR_MOUNT_ANGLES, PUSH_DRIFT_ACCEL, PUSH_MAX_TILT, PUSH_SLIDE_TRIGGER, PUSH_TILT_ACCEL } from './tuning.js';
 import { PUSH_ANIMAL_KINDS } from './entities/registry.js';
 
 export function resolveObstacle(p, ob) {
@@ -68,6 +68,14 @@ export function resolveObstacle(p, ob) {
     ob.pushed = true;
     ob.driftVX += awayDir * PUSH_DRIFT_ACCEL;
     ob.tiltVel += awayDir * PUSH_TILT_ACCEL; // rock in the push direction
+
+    // Once the animal has rocked all the way to its full tilt in the push
+    // direction, it stops just wobbling and starts sliding along the floor
+    // that way. updateObstacles integrates the slide and halts it on any
+    // collision (another animal/object or a wall).
+    if (Math.sign(ob.tilt) === awayDir && Math.abs(ob.tilt) >= PUSH_MAX_TILT * PUSH_SLIDE_TRIGGER) {
+      ob.sliding = awayDir;
+    }
   }
 
   // Turtle only crawls while it's currently being stood on — see updateObstacles.

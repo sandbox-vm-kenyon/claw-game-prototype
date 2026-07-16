@@ -132,6 +132,13 @@ export const PUSH_TILT_STIFFNESS = 0.02; // spring pulling the tilt back upright
 
 export const PUSH_TILT_DAMPING = 0.86;   // damping so the rocking settles rather than oscillating forever
 
+// Push-and-slide: once a pushed animal has rocked all the way to its full tilt
+// (PUSH_MAX_TILT) in the push direction, it stops merely wobbling in place and
+// begins slowly sliding across the floor in that direction. The slide halts the
+// instant it runs into another animal, another object, or a box wall.
+export const PUSH_SLIDE_TRIGGER = 0.98;  // fraction of PUSH_MAX_TILT the rock must reach to start the slide
+export const PUSH_SLIDE_SPEED = 0.6;     // slow slide speed along the floor while pushed (px/frame)
+
 export const HOMING_BASE = 0.45;    // starting horizontal pursuit speed (px/frame)
 
 export const HOMING_GROWTH = 0.03;  // added per second survived

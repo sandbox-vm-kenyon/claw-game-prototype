@@ -1,7 +1,7 @@
 import { game } from '../state.js';
 import { W } from '../core.js';
 import { resolveBallObstacleCollisions } from '../physics.js';
-import { BALL_BOUNCE_RESTITUTION, BALL_BOUNDS_PAD, BALL_FRICTION, BALL_GRAVITY, BALL_MIN_BOUNCE_VY, FLOOR_Y, PUSH_DRIFT_FRICTION, PUSH_MAX_DRIFT, PUSH_MAX_TILT, PUSH_RETURN, PUSH_TILT_DAMPING, PUSH_TILT_STIFFNESS, TURTLE_BOUNDS_PAD, TURTLE_SPEED } from '../tuning.js';
+import { BALL_BOUNCE_RESTITUTION, BALL_BOUNDS_PAD, BALL_FRICTION, BALL_GRAVITY, BALL_MIN_BOUNCE_VY, FLOOR_Y, PUSH_DRIFT_FRICTION, PUSH_MAX_DRIFT, PUSH_MAX_TILT, PUSH_RETURN, PUSH_SLIDE_SPEED, PUSH_TILT_DAMPING, PUSH_TILT_STIFFNESS, TURTLE_BOUNDS_PAD, TURTLE_SPEED } from '../tuning.js';
 import { PUSH_ANIMAL_KINDS, ENTITY_TYPES, OBSTACLE_SPAWN_ORDER } from './registry.js';
 
 export function initObstacles() {
@@ -33,6 +33,7 @@ export function initObstacles() {
     driftVX: 0,     // slow horizontal drift velocity from being pushed (push animals)
     tilt: 0,        // current rocking/tilt angle in radians (push animals)
     tiltVel: 0,     // angular velocity of the rocking spring (push animals)
+    sliding: 0,     // once rocked to full tilt, the push direction (-1/+1) it's now sliding along the floor; 0 = not sliding (push animals)
   }));
 }
 
@@ -40,6 +41,43 @@ export function initObstacles() {
 // obstacle. Pushes the player out along the shortest escape direction, so
 // landing on top behaves like a platform (grounded = true) while hitting a
 // side simply blocks movement, letting the player instead jump over it.
+
+// Slide a pushed animal horizontally by `delta` px, but no further than the
+// first thing in its way. It's blocked by a box wall or by any other obstacle
+// whose body it would overlap (vertically level with it), coming to rest flush
+// against that blocker. Returns the distance actually moved (0 if blocked
+// immediately), so the caller can tell when the slide has hit something and
+// should stop. Sets ob.x to the resting position and returns true if the slide
+// was blocked short of the full requested delta (hit a wall or object), false
+// if it moved the whole way unobstructed.
+function slideAnimal(ob, delta) {
+  const startX = ob.x;
+  const wantX = ob.x + delta;
+  let targetX = wantX;
+
+  // Box walls.
+  targetX = Math.max(0, Math.min(W - ob.w, targetX));
+
+  // Other obstacles: only those sharing vertical space with this animal can
+  // block it. Whichever is nearest in the slide direction sets the limit.
+  for (const other of game.obstacles) {
+    if (other === ob) continue;
+    const overlapY = Math.min(ob.y + ob.h, other.y + other.h) - Math.max(ob.y, other.y);
+    if (overlapY <= 0) continue; // not level with this animal, can't collide
+
+    if (delta > 0 && startX + ob.w <= other.x) {
+      // Moving right toward an obstacle on the right: stop flush against it.
+      if (targetX + ob.w > other.x) targetX = other.x - ob.w;
+    } else if (delta < 0 && startX >= other.x + other.w) {
+      // Moving left toward an obstacle on the left: stop flush against it.
+      if (targetX < other.x + other.w) targetX = other.x + other.w;
+    }
+  }
+
+  ob.x = targetX;
+  // Blocked if it couldn't reach where it was trying to go this frame.
+  return Math.abs(targetX - wantX) > 1e-6;
+}
 
 export function updateObstacles(dt) {
   for (const ob of game.obstacles) {
@@ -65,12 +103,23 @@ export function updateObstacles(dt) {
     // stops pushing. Runs only for the box-stage animals (PUSH_ANIMAL_KINDS);
     // the turtle also has its own ride-crawl below, which is unaffected.
     if (PUSH_ANIMAL_KINDS.includes(ob.kind)) {
-      if (ob.pushed) {
-        // Drift in the push direction, clamped so it never wanders far.
+      if (ob.pushed && ob.sliding) {
+        // Fully rocked over — slide slowly along the floor in the push
+        // direction. Unlike the little bounded drift, the slide is free to
+        // travel the whole box, but it stops the instant it hits a wall or
+        // another obstacle (see slideAnimal). Its resting spot moves with it,
+        // so once it stops it stays put rather than springing back home.
+        const blocked = slideAnimal(ob, ob.sliding * PUSH_SLIDE_SPEED * dt);
+        ob.homeX = ob.x;
+        if (blocked) ob.sliding = 0; // ran into a wall/object — halt the slide
+      } else if (ob.pushed) {
+        // Rocking but not yet fully tilted over — the original subtle bounded
+        // drift, clamped so it never wanders far before the slide kicks in.
         ob.x += ob.driftVX * dt;
         ob.x = Math.max(ob.homeX - PUSH_MAX_DRIFT, Math.min(ob.homeX + PUSH_MAX_DRIFT, ob.x));
       } else {
-        // Not being pushed — gently ease back toward home.
+        // Not being pushed — stop sliding and gently ease back toward home.
+        ob.sliding = 0;
         ob.x += (ob.homeX - ob.x) * PUSH_RETURN * dt;
       }
       ob.driftVX *= PUSH_DRIFT_FRICTION;
