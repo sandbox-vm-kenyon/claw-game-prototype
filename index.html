@@ -165,65 +165,11 @@
     <button id="btnJump">JUMP</button>
   </div>
 
-<script src="game.js"></script>
-<script>
-// One-handed controls: a left-side virtual joystick drives movement and a
-// right-side button triggers the jump (the game's only other action — the
-// claw itself is fully AI-controlled, so there's no separate "drop" input
-// to bind). Both are wired into game.js's shared top-level `keys` state
-// (classic <script> tags share the same global lexical scope), the same
-// way the previous touch buttons were.
-function holdKey(key, el) {
-  const start = () => { keys[key] = true; };
-  const stop  = () => { keys[key] = false; };
-  el.addEventListener('pointerdown',  e => { e.preventDefault(); start(); });
-  el.addEventListener('pointerup',    stop);
-  el.addEventListener('pointerleave', stop);
-  el.addEventListener('pointercancel', stop);
-}
-holdKey('ArrowUp', document.getElementById('btnJump'));
-
-// Draggable joystick: only horizontal deflection affects movement, since
-// this is a side-scrolling platformer with no vertical steering.
-const joystick = document.getElementById('joystick');
-const joystickKnob = document.getElementById('joystickKnob');
-const JOYSTICK_RADIUS = 26; // max knob travel from center, in px
-const JOYSTICK_DEADZONE = 10;
-let joystickPointerId = null;
-
-function updateJoystick(clientX, clientY) {
-  const rect = joystick.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  const dx = clientX - cx;
-  const dy = clientY - cy;
-  const dist = Math.min(Math.hypot(dx, dy), JOYSTICK_RADIUS);
-  const angle = Math.atan2(dy, dx);
-  joystickKnob.style.transform = `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px)`;
-
-  keys['ArrowRight'] = dx > JOYSTICK_DEADZONE;
-  keys['ArrowLeft']  = dx < -JOYSTICK_DEADZONE;
-}
-
-function resetJoystick() {
-  joystickKnob.style.transform = 'translate(0, 0)';
-  keys['ArrowLeft'] = false;
-  keys['ArrowRight'] = false;
-  joystickPointerId = null;
-}
-
-joystick.addEventListener('pointerdown', e => {
-  e.preventDefault();
-  joystickPointerId = e.pointerId;
-  joystick.setPointerCapture(e.pointerId);
-  updateJoystick(e.clientX, e.clientY);
-});
-joystick.addEventListener('pointermove', e => {
-  if (e.pointerId !== joystickPointerId) return;
-  updateJoystick(e.clientX, e.clientY);
-});
-joystick.addEventListener('pointerup',     e => { if (e.pointerId === joystickPointerId) resetJoystick(); });
-joystick.addEventListener('pointercancel', e => { if (e.pointerId === joystickPointerId) resetJoystick(); });
-</script>
+<!-- The whole game is now an ES-module bundle. Vite rewrites this to the
+     hashed production script at build time; in dev it serves the module
+     graph directly. The on-screen touch controls (joystick + JUMP button)
+     that used to live in an inline <script> here now live in src/input.js,
+     where the shared `keys` map is in module scope. -->
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
