@@ -1,0 +1,21 @@
+name: CI
+
+# Runs the test suite and a production build on every push and PR, so a change
+# that breaks the game (or the build) can't silently ship to GitHub Pages.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
